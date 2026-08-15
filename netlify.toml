@@ -1,0 +1,9 @@
+# Static site — nothing to build, publish the repo root as-is.
+[build]
+  publish = "."
+  command = ""
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
