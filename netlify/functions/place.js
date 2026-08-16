@@ -54,7 +54,14 @@ async function findPlace(key, name, lat, lng) {
     const km = Math.sqrt(dy * dy + dx * dx);
     if (!best || km < best.km) best = { km, id: p.id, name: p.displayName && p.displayName.text };
   }
-  if (best.km > 1.2) return { error: 'too_far', km: best.km };
+  /* Some of our own pins are a street or two out, and a few are plain wrong, so
+     a hard distance cut silently loses the hours for real matches. Allow a
+     further hop only when the name itself clearly agrees. */
+  const n = s => String(s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
+  const a = n(best.name), b = n(name);
+  const nameAgrees = a && b && (a === b || a.startsWith(b) || b.startsWith(a));
+  const limit = nameAgrees ? 4 : 1.2;
+  if (best.km > limit) return { error: 'too_far', km: best.km, matched: best.name };
   return { id: best.id, name: best.name, km: best.km };
 }
 
