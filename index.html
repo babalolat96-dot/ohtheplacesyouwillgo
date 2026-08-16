@@ -755,6 +755,24 @@ a{color:var(--accent)}
 .search .clr{position:absolute; right:6px; top:6px; width:26px;height:26px;border:0;background:none;
   border-radius:6px;cursor:pointer;color:var(--ink-3);display:none}
 .search.has .clr{display:block}
+.search.ask .clr{right:38px}
+.search .send{
+  position:absolute; right:6px; top:5px; width:30px; height:30px; border:0; padding:0;
+  border-radius:8px; background:var(--accent); color:var(--accent-ink); cursor:pointer;
+  display:none; place-items:center;
+}
+.search.ask .send{display:grid}
+.search input{padding-right:44px}
+.prompts{display:flex; gap:6px; margin-top:9px; overflow-x:auto; scrollbar-width:none;
+  padding-bottom:2px; touch-action:pan-x}
+.prompts::-webkit-scrollbar{display:none}
+.prompts button{flex:none; white-space:nowrap}
+.prompts button{
+  border:1px solid var(--line); background:var(--chip); color:var(--ink-2);
+  border-radius:999px; padding:5px 11px; font-size:12.5px; cursor:pointer; text-align:left;
+}
+.prompts button:hover{border-color:var(--ink-3); color:var(--ink)}
+.prompts:empty{display:none}
 
 /* ---------- filters ---------- */
 .filters{padding:12px 16px 13px; border-bottom:1px solid var(--line); flex:0 0 auto}
@@ -1042,8 +1060,11 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
       </div>
       <div class="search" id="searchwrap">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input id="q" type="search" placeholder="Search anywhere in London, or any spot" autocomplete="off">
+        <input id="q" type="search" placeholder="Ask me where to go…" autocomplete="off">
         <button class="clr" id="clrq" aria-label="Clear search">✕</button>
+        <button class="send" id="sendq" aria-label="Ask">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </button>
         <div class="cbdrop" id="qdrop"></div>
       </div>
       <div class="nearrow" style="margin-top:9px">
@@ -1061,6 +1082,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
         </select>
       </div>
       <p id="geostatus"></p>
+      <div class="prompts" id="prompts"></div>
     </div>
 
     <div class="filters">
@@ -1368,12 +1390,12 @@ function buildSuggestions(){
   suggestions=[];
   const words=t.split(/\s+/).filter(Boolean).length;
   if(t.length>=2){
-    if(words>=3) suggestions.push({type:'ask', text:t});
+    if(words>=2) suggestions.push({type:'ask', text:t});
     gazSearch(t).forEach(g=>suggestions.push({type:'place', g}));
     const tl=t.toLowerCase();
     DATA.filter(d=>d.n.toLowerCase().includes(tl)).slice(0,5)
         .forEach(d=>suggestions.push({type:'spot', d}));
-    if(words===2 && suggestions.length===0) suggestions.push({type:'ask', text:t});
+
   }
   if(!suggestions.length){ qdrop.classList.remove('open'); qdrop.innerHTML=''; return; }
   qdrop.innerHTML = suggestions.map((s0,i)=>{
@@ -1421,28 +1443,51 @@ function focusOrigin(n){
   const pts=[S.me, ...near.map(x=>[x.d.lat,x.d.lng])];
   map.flyToBounds(L.latLngBounds(pts),{padding:[45,45], maxZoom:15.5, duration:.8});
 }
+function askable(){ return q.value.trim().split(/\s+/).filter(Boolean).length>=2; }
 q.oninput=()=>{
   S.q=q.value.trim().toLowerCase();
   sw.classList.toggle('has',!!q.value);
+  sw.classList.toggle('ask', askable());
   buildSuggestions(); render();
 };
 q.onfocus=buildSuggestions;
 q.onblur=()=>setTimeout(closeDrop,140);
 q.onkeydown=e=>{
   if(e.key==='Escape'){ closeDrop(); q.blur(); return; }
-  if(!suggestions.length) return;
+  if(!suggestions.length){ if(e.key==='Enter' && askable()){ e.preventDefault(); ask(q.value.trim()); } return; }
   const bs=[...qdrop.querySelectorAll('button')];
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){
     e.preventDefault(); hiIdx=(hiIdx+(e.key==='ArrowDown'?1:-1)+bs.length)%bs.length;
     bs.forEach(b=>b.classList.remove('hi'));
     if(bs[hiIdx]){bs[hiIdx].classList.add('hi'); bs[hiIdx].scrollIntoView({block:'nearest'});}
   } else if(e.key==='Enter'){
-    e.preventDefault(); choose(suggestions[hiIdx>=0?hiIdx:0]);
+    e.preventDefault();
+    if(hiIdx>=0) choose(suggestions[hiIdx]);
+    else if(askable()) ask(q.value.trim());
+    else choose(suggestions[0]);
   }
 };
 document.getElementById('clrq').onclick=()=>{
-  q.value='';S.q='';sw.classList.remove('has');closeDrop();S.plan=null;render();q.focus();
+  q.value='';S.q='';sw.classList.remove('has');sw.classList.remove('ask');
+  closeDrop();S.plan=null;render();drawPrompts();q.focus();
 };
+document.getElementById('sendq').onclick=()=>{ if(askable()) ask(q.value.trim()); };
+
+/* example asks, so it is obvious what this thing can do */
+const PROMPTS=[
+  'drinks near me',
+  'date night: food then cheap drinks',
+  'cheap eats in Peckham',
+  'matcha somewhere pretty',
+  'a listening bar tonight',
+];
+function drawPrompts(){
+  const el=document.getElementById('prompts');
+  if(!el) return;
+  if(S.plan || q.value.trim()){ el.innerHTML=''; return; }
+  el.innerHTML=PROMPTS.map((t,i)=>'<button type="button" data-i="'+i+'">'+esc(t)+'</button>').join('');
+  [...el.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>ask(PROMPTS[+b.dataset.i]); });
+}
 
 /* ---------------- distance origin: my location, or any searched place ---------------- */
 const nearBtn=document.getElementById('nearme'), radiusSel=document.getElementById('radius'),
@@ -1584,15 +1629,19 @@ function parseLocal(text){
   }
   if(!stops.length) return null;
   const places=findPlaces(t);
+  const vm=t.match(/\b(?:at|from|leaving|outside|by)\s+([a-z0-9'’&\- ]{3,30}?)(?:\s*[,.]|\s+(?:and|then|i|we|need|want|for|after|now)\b|$)/);
+  const venues=[];
+  if(vm){ const cand=vm[1].trim(); if(cand && !findPlaces(' '+cand+' ').length && findVenue(cand)) venues.push(cand); }
   const plan={
-    stops,
+    stops, venues,
+    anchorIsVenue: venues.length>0,
     locations: places.map(p=>p.name),
     between: BETWEEN.test(t) && places.length>=2,
-    useMyLocation: NEARME.test(t) || (!places.length),
+    useMyLocation: NEARME.test(t) || (!places.length && !venues.length),
     party: /\bfor two\b|\bthe two of us\b/.test(t) ? 2 : null,
     reply: null, via:'built in',
   };
-  const confident = stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)) || places.length>0;
+  const confident = stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)) || places.length>0 || venues.length>0;
   return confident ? plan : null;
 }
 
@@ -1612,7 +1661,26 @@ function stopMatches(st){
     return true;
   });
 }
+function findVenue(name){
+  const t=String(name||'').toLowerCase().trim();
+  if(t.length<3) return null;
+  const norm=x=>x.toLowerCase().replace(/[^a-z0-9 ]/g,'');
+  const nt=norm(t);
+  let hit=DATA.find(d=>norm(d.n)===nt);
+  if(!hit) hit=DATA.find(d=>norm(d.n).startsWith(nt+' '));
+  if(!hit) hit=DATA.find(d=>norm(d.n).includes(nt));
+  if(!hit){
+    const words=nt.split(' ').filter(w=>w.length>3);
+    if(words.length) hit=DATA.find(d=>words.every(w=>norm(d.n).includes(w)));
+  }
+  return hit && hit.lat ? hit : null;
+}
 function planOrigin(plan){
+  const vnames=(plan.venues||[]).concat(plan.anchorIsVenue?(plan.locations||[]):[]);
+  for(const v of vnames){
+    const hit=findVenue(v);
+    if(hit){ plan._anchor=hit.n; return {pt:[hit.lat,hit.lng], label:hit.n, venue:hit}; }
+  }
   const pts=(plan.locations||[]).map(n=>{
     const g=GAZ.find(x=>x.name.toLowerCase()===String(n).toLowerCase()) || gazSearch(String(n))[0];
     return g ? [g.lat,g.lng] : null;
@@ -1627,10 +1695,19 @@ function planOrigin(plan){
 }
 function runPlan(plan){
   const origin=planOrigin(plan);
-  const rad=plan.radiusKm || (plan.between ? 4 : origin ? 3 : 0);
-  const rank=(rows)=>rows.map(d=>({d, km: origin?dist(origin.pt,[d.lat,d.lng]):null}))
-    .filter(x=>!rad || x.km===null || x.km<=rad)
+  let rad=plan.radiusKm || (plan.between ? 4 : origin ? 2 : 0);
+  let widened=false;
+  const rankAt=(rows,r)=>rows.map(d=>({d, km: origin?dist(origin.pt,[d.lat,d.lng]):null}))
+    .filter(x=>{
+      if(origin && plan._anchor && x.d.n===plan._anchor) return false;   // not the place they just left
+      return !r || x.km===null || x.km<=r;
+    })
     .sort((a,b)=> (a.km!==null? a.km-b.km : (parseFloat(b.d.rat||0)-parseFloat(a.d.rat||0))));
+  const rank=(rows)=>{
+    let r=rad, out=rankAt(rows,r);
+    while(origin && out.length<3 && r<16){ r=r*2; out=rankAt(rows,r); widened=true; }
+    rad=r; return out;
+  };
   const stops=(plan.stops&&plan.stops.length?plan.stops:[{kind:'any'}]);
   let result;
   if(stops.length>=2){
@@ -1649,9 +1726,9 @@ function runPlan(plan){
       if(best) pairs.push({a:a.d, b:best.b, walk:best.w, km:a.km, sc:best.sc});
     });
     pairs.sort((x,y)=>x.sc-y.sc);
-    result={type:'pairs', pairs:pairs.slice(0,10), origin, plan};
+    result={type:'pairs', pairs:pairs.slice(0,10), origin, plan, widened, rad};
   } else {
-    result={type:'rows', rows:rank(stopMatches(stops[0])).slice(0,40).map(x=>x.d), origin, plan};
+    result={type:'rows', rows:rank(stopMatches(stops[0])).slice(0,40).map(x=>x.d), origin, plan, widened, rad};
   }
   S.plan=result;
   if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
@@ -1663,11 +1740,11 @@ function runPlan(plan){
   if(pts.length) map.flyToBounds(L.latLngBounds(pts),{padding:[45,45],maxZoom:15,duration:.8});
   return result;
 }
-function clearPlan(){ S.plan=null; render(); }
+function clearPlan(){ S.plan=null; render(); drawPrompts(); }
 
 async function ask(text){
   closeDrop();
-  q.value=''; S.q=''; sw.classList.remove('has');
+  q.value=''; S.q=''; sw.classList.remove('has'); sw.classList.remove('ask');
   const local=parseLocal(text);
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
@@ -1744,6 +1821,7 @@ function render(){
     'Some entries are dated events — check the post before you go.</p>';
   listEl.appendChild(f);
   updateFilterCount();
+  drawPrompts();
 }
 
 
@@ -1751,8 +1829,9 @@ function planBar(p){
   const el=document.createElement('div');
   el.className='planbar';
   const via = p.plan && p.plan.via==='understood' ? 'understood' : 'matched here on your phone';
+  const wide = p.widened ? ' · nothing very close, widened to '+Math.round(p.rad)+'km' : '';
   el.innerHTML='<div class="pb">'+esc((p.plan&&p.plan.reply)||('Looking for: '+((p.plan&&p.plan.asked)||'')))+
-    '<span class="via">'+(p.origin?('near '+esc(p.origin.label)+' · '):'')+via+'</span></div>'+
+    '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+wide+'</span></div>'+
     '<button id="clearplan">clear</button>';
   setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
   return el;
@@ -2123,6 +2202,7 @@ let rz; window.addEventListener('resize',()=>{
 });
 
 render();
+drawPrompts();
 homeView();
 locate(true);
 </script>
