@@ -1205,7 +1205,7 @@ if(window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').match
 }
 
 /* ---------------- state ---------------- */
-const S = {plan:null, sug:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
+const S = {plan:null, sug:null, planWhen:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
            bands:new Set(), cuis:new Set(), srcs:new Set(),
            matchAll:false, me:null, meLabel:'', radius:0, sel:null};
 const BANDS=[['£','£ under ~15'],['££','££ 15-35'],['£££','£££ 35-70'],['££££','££££ 70+'],['Free','Free']];
@@ -1737,6 +1737,36 @@ function planOrigin(plan){
   if(S.me) return {pt:S.me, label:'you'};
   return null;
 }
+const WHENWORDS=[
+  [/\btonight\b|\bthis evening\b/, d=>{const x=new Date(d); x.setHours(20,0,0,0); return x;}],
+  [/\btomorrow night\b|\btomorrow evening\b/, d=>{const x=new Date(d); x.setDate(x.getDate()+1); x.setHours(20,0,0,0); return x;}],
+  [/\btomorrow\b/, d=>{const x=new Date(d); x.setDate(x.getDate()+1); x.setHours(19,0,0,0); return x;}],
+  [/\bnow\b|\bright now\b/, d=>new Date(d)],
+  [/\blunch\b/, d=>{const x=new Date(d); x.setHours(13,0,0,0); return x;}],
+  [/\bbrunch\b/, d=>{const x=new Date(d); x.setHours(11,0,0,0); return x;}],
+];
+function whenFrom(plan){
+  const t=String((plan&&plan.when)||'').toLowerCase()+' '+String((plan&&plan.asked)||'').toLowerCase();
+  const now=new Date();
+  // a named day, optionally with a time
+  const dayIdx=DAYS.findIndex(d=>new RegExp('\\b'+d.toLowerCase()+'\\b').test(t));
+  const tm=t.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b(?!\s*(?:km|min))/);
+  let base=null;
+  if(dayIdx>=0){
+    base=new Date(now);
+    let add=(dayIdx-now.getDay()+7)%7; if(add===0) add=7;
+    base.setDate(base.getDate()+add); base.setHours(20,0,0,0);
+  }
+  for(const [re,fn] of WHENWORDS) if(re.test(t)){ base=fn(base||now); break; }
+  if(tm && base){
+    let h=+tm[1]; const mn=tm[2]?+tm[2]:0;
+    if(tm[3]==='pm' && h<12) h+=12;
+    if(!tm[3] && h<=11) h+=12;                 // "at 8" on a night out means 20:00
+    base.setHours(h,mn,0,0);
+  }
+  return base;
+}
+
 function runPlan(plan){
   const origin=planOrigin(plan);
   let rad=plan.radiusKm || (plan.between ? 4 : origin ? 2 : 0);
@@ -1775,8 +1805,10 @@ function runPlan(plan){
     result={type:'rows', rows:rank(stopMatches(stops[0])).slice(0,40).map(x=>x.d), origin, plan, widened, rad};
   }
   S.plan=result;
+  S.planWhen=whenFrom(plan);
   if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
   render();
+  applyHours(result);
   const pts=(result.type==='pairs'
       ? result.pairs.flatMap(p=>[[p.a.lat,p.a.lng],[p.b.lat,p.b.lng]])
       : result.rows.map(d=>[d.lat,d.lng])).slice(0,16);
@@ -1784,6 +1816,29 @@ function runPlan(plan){
   if(pts.length) map.flyToBounds(L.latLngBounds(pts),{padding:[45,45],maxZoom:15,duration:.8});
   return result;
 }
+/* fetch hours for the shortlist, then float the open ones up */
+async function applyHours(result){
+  if(!result) return;
+  const rows = result.type==='pairs'
+    ? result.pairs.flatMap(p=>[p.a,p.b])
+    : (result.rows||[]);
+  if(!rows.length) return;
+  result.hoursPending=true; render();
+  await hydrateHours(rows, result.type==='pairs'?10:10);
+  result.hoursPending=false;
+  const when=S.planWhen||new Date();
+  const score=d=>{ const st=openState(d.n, when); return st===null?1:(st.open?0:2); };
+  if(result.type==='rows'){
+    result.rows=result.rows.slice().sort((a,b)=>score(a)-score(b));
+  } else {
+    result.pairs=result.pairs.slice().sort((x,y)=>
+      (score(x.a)+score(x.b))-(score(y.a)+score(y.b)));
+  }
+  const shut=rows.filter(d=>{const st=openState(d.n,when); return st&&!st.open;}).length;
+  result.shutCount=shut;
+  render();
+}
+
 function clearPlan(){ S.plan=null; S.sug=null; drawSugMarkers([]); render(); drawPrompts(); }
 
 /* ---- second tier: places the model knows, verified before they appear ---- */
@@ -1956,8 +2011,12 @@ function planBar(p){
   el.className='planbar';
   const via = p.plan && p.plan.via==='understood' ? 'understood' : 'matched here on your phone';
   const wide = p.widened ? ' · nothing very close, widened to '+Math.round(p.rad)+'km' : '';
+  const when = S.planWhen ? ' · for '+S.planWhen.toLocaleDateString('en-GB',{weekday:'short'})+' '+
+      String(S.planWhen.getHours()).padStart(2,'0')+':'+String(S.planWhen.getMinutes()).padStart(2,'0') : '';
+  const hrs = p.hoursPending ? ' · checking hours…'
+    : (p.shutCount ? ' · '+p.shutCount+' shut then, moved down' : '');
   el.innerHTML='<div class="pb">'+esc((p.plan&&p.plan.reply)||('Looking for: '+((p.plan&&p.plan.asked)||'')))+
-    '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+wide+'</span></div>'+
+    '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+when+wide+hrs+'</span></div>'+
     '<button id="clearplan">clear</button>';
   setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
   return el;
@@ -2046,6 +2105,10 @@ function card(d){
               d.rat?('★ '+d.rat):null].filter(Boolean).join(' · ');
   const dd = S.me&&d.lat ? '<span class="dist">'+fmtDist(dist(S.me,[d.lat,d.lng]))+'</span>' : '';
   const tags=[];
+  const st=openState(d.n, S.planWhen);
+  if(st) tags.push(st.open
+    ? '<span class="now">'+(st.closingAt?('until '+hhmm(st.closingAt)):'Open')+'</span>'
+    : '<span class="shut">Closed'+(S.planWhen?' then':' now')+'</span>');
   if(d.band) tags.push('<span class="tag price">'+esc(d.band==='Free'?'Free':d.band)+'</span>');
   else if(d.price) tags.push('<span class="tag price">'+esc(d.price)+'</span>');
   d.tags.slice(0,3).forEach(t=>{
@@ -2123,6 +2186,107 @@ function paintLive(name, live){
   if(live && live.phone && acts && !acts.querySelector('.wcall'))
     acts.insertAdjacentHTML('beforeend','<a class="btn wcall" href="tel:'+
       live.phone.replace(/\s/g,'')+'">Call</a>');
+}
+
+
+/* ============ opening hours: cached, and used to rank ============ */
+const LS='otp:v1:';
+function lsGet(k){ try{ const v=localStorage.getItem(LS+k); return v?JSON.parse(v):null; }catch(e){ return null; } }
+function lsSet(k,v){ try{ localStorage.setItem(LS+k, JSON.stringify(v)); }catch(e){} }
+const keyOf=n=>'p:'+String(n).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,40);
+const WEEK_MS=7*24*3600*1000;
+
+/* Google's own wording, e.g. "Monday: 12:00 – 15:45, 17:00 – 22:00" */
+function parseWeek(lines){
+  const out={};
+  (lines||[]).forEach(line=>{
+    const i=line.indexOf(':'); if(i<0) return;
+    const day=line.slice(0,i).trim().toLowerCase();
+    const rest=line.slice(i+1).trim();
+    const di=DAYS.findIndex(d=>d.toLowerCase()===day);
+    if(di<0) return;
+    if(/closed/i.test(rest)){ out[di]=[]; return; }
+    if(/24\s*hours/i.test(rest)){ out[di]=[[0,1440]]; return; }
+    const spans=[];
+    rest.split(',').forEach(part=>{
+      const m=part.match(/(\d{1,2}):(\d{2})\s*(?:am|pm)?\s*[–\-—to]+\s*(\d{1,2}):(\d{2})/i);
+      if(!m) return;
+      let a=(+m[1])*60+(+m[2]), b=(+m[3])*60+(+m[4]);
+      if(/pm/i.test(part.split(/[–\-—]/)[0]) && +m[1]<12) a+=720;
+      if(/pm/i.test(part.split(/[–\-—]/)[1]||'') && +m[3]<12) b+=720;
+      spans.push([a,b]);
+    });
+    out[di]=spans;
+  });
+  return out;
+}
+/* is it open at this moment in time, allowing for spans running past midnight */
+function openAt(week, when){
+  if(!week) return null;
+  const d=when.getDay(), mins=when.getHours()*60+when.getMinutes();
+  const today=week[d], yest=week[(d+6)%7];
+  if(today===undefined && yest===undefined) return null;
+  for(const [a,b] of (today||[])){
+    if(b>a ? (mins>=a&&mins<b) : (mins>=a)) return true;
+  }
+  for(const [a,b] of (yest||[])){ if(b<=a && mins < b) return true; }   // ran over midnight
+  return false;
+}
+function closingSoon(week, when){
+  if(!week) return null;
+  const d=when.getDay(), mins=when.getHours()*60+when.getMinutes();
+  for(const [a,b] of (week[d]||[])) if(mins>=a && b>mins && b-mins<=60) return b;
+  return null;
+}
+const hhmm=m=>String(Math.floor(m/60)%24).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+
+/* one venue, cache first. place ids are kept indefinitely, details for a week */
+async function liveFor(d){
+  if(!d.lat) return null;
+  const k=keyOf(d.n);
+  const hit=lsGet(k);
+  if(hit && hit.ts && Date.now()-hit.ts < WEEK_MS) return hit;
+  const gid=(hit&&hit.id)||null;
+  try{
+    const r=await fetch('/api/place',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:d.n, lat:d.lat, lng:d.lng, id:gid})});
+    const j=await r.json();
+    if(j && !j.error){
+      j.week = j.hours && j.hours.week ? parseWeek(j.hours.week) : null;
+      j.ts=Date.now();
+      lsSet(k,j);
+      return j;
+    }
+    if(gid) return hit;                       // stale is better than nothing
+    lsSet(k,{ts:Date.now(), none:true});
+  }catch(e){}
+  return null;
+}
+/* top results only, a few at a time, so a search never costs much */
+async function hydrateHours(rows, limit){
+  const want=rows.filter(d=>d.lat).slice(0, limit||8);
+  const todo=want.filter(d=>{ const h=lsGet(keyOf(d.n)); return !(h&&h.ts&&Date.now()-h.ts<WEEK_MS); });
+  const cached=want.filter(d=>!todo.includes(d));
+  cached.forEach(d=>{ const h=lsGet(keyOf(d.n)); if(h&&!h.none) liveCache.set(d.n, Promise.resolve(h)); });
+  for(let i=0;i<todo.length;i+=4){
+    await Promise.all(todo.slice(i,i+4).map(async d=>{
+      const j=await liveFor(d);
+      if(j) liveCache.set(d.n, Promise.resolve(j));
+    }));
+  }
+  return want.length;
+}
+function knownHours(name){
+  const h=lsGet(keyOf(name));
+  return (h && !h.none && h.week) ? h : null;
+}
+function openState(name, when){
+  const h=knownHours(name);
+  if(!h) return null;
+  const o=openAt(h.week, when||new Date());
+  if(o===null) return null;
+  const soon = o ? closingSoon(h.week, when||new Date()) : null;
+  return {open:o, closingAt:soon};
 }
 
 /* ---------------- detail ---------------- */
