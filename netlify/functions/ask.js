@@ -72,7 +72,11 @@ const SCHEMA = {
         },
       },
       locations: { type: 'array', items: { type: 'string' },
-        description: 'London place names mentioned, verbatim. e.g. ["Peckham","Northolt"]' },
+        description: 'Areas, neighbourhoods, stations or postcodes mentioned, verbatim. e.g. ["Peckham","Northolt"]' },
+      venues: { type: 'array', items: { type: 'string' },
+        description: 'Specific named venues mentioned - a restaurant, bar or cafe - as opposed to an area. e.g. ["Zephyr"]. Always include one if the user names a place they have been or are going to.' },
+      anchorIsVenue: { type: 'boolean',
+        description: 'True when the search should be centred on a named venue rather than an area, e.g. "somewhere after dinner at X".' },
       between: { type: 'boolean',
         description: 'True when they want somewhere between the named locations.' },
       useMyLocation: { type: 'boolean', description: 'True for "near me", "close by", "around here".' },
@@ -94,7 +98,10 @@ Rules:
 - "food then drinks" is two stops in that order.
 - "cheap", "budget", "a tenner" -> maxBand "£". "nice", "fancy", "special" -> "£££".
 - "date", "for two", "romantic" -> tags ["date-night"] and party 2.
-- Place names go in locations verbatim, even if misspelled. Do not invent places.
+- Areas and stations go in locations verbatim, even if misspelled. Do not invent places.
+- A named restaurant, bar or cafe goes in venues, not locations, and sets anchorIsVenue true.
+  "just ate at Zephyr, drinks after" -> venues ["Zephyr"], anchorIsVenue true, one drink stop.
+- Do not set useMyLocation when a venue or area anchors the request.
 - "in the middle", "between us", "halfway" -> between=true.
 - If nothing narrows it, return one stop with kind "any".
 - Never put a cuisine in locations, or a place name in cuisines.`;

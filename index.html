@@ -885,6 +885,17 @@ body.detail-open .mobtab{display:none}
   margin-bottom:3px}
 .pair .walk{margin:8px 0 0 37px; font-size:11.5px; color:var(--ink-3)}
 
+.sechead{padding:14px 16px 8px; font-size:11px; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--ink-3); border-top:1px solid var(--line); display:flex; align-items:center; gap:8px}
+.sechead .badge{border:1px dashed var(--ink-3); border-radius:999px; padding:1px 7px;
+  font-size:10px; letter-spacing:.02em; text-transform:none}
+.secnote{padding:0 16px 8px; font-size:11.5px; color:var(--ink-3)}
+.card.sug .pin{background:none !important; border:1.5px dashed var(--ink-3)}
+.card.sug .pin svg{fill:var(--ink-3)}
+.mk.sug{background:var(--surface) !important; border:2px dashed var(--ink-3)}
+.mk.sug svg{fill:var(--ink-3)}
+.loadingrow{padding:12px 16px; font-size:12.5px; color:var(--ink-3)}
+
 /* ---------- results ---------- */
 .bar{padding:9px 16px; flex:0 0 auto; display:flex; align-items:center; gap:10px;
   border-bottom:1px solid var(--line); font-size:12.5px; color:var(--ink-3)}
@@ -1176,7 +1187,7 @@ if(window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').match
 }
 
 /* ---------------- state ---------------- */
-const S = {plan:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
+const S = {plan:null, sug:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
            bands:new Set(), cuis:new Set(), srcs:new Set(),
            matchAll:false, me:null, meLabel:'', radius:0, sel:null};
 const BANDS=[['£','£ under ~15'],['££','££ 15-35'],['£££','£££ 35-70'],['££££','££££ 70+'],['Free','Free']];
@@ -1740,7 +1751,62 @@ function runPlan(plan){
   if(pts.length) map.flyToBounds(L.latLngBounds(pts),{padding:[45,45],maxZoom:15,duration:.8});
   return result;
 }
-function clearPlan(){ S.plan=null; render(); drawPrompts(); }
+function clearPlan(){ S.plan=null; S.sug=null; drawSugMarkers([]); render(); drawPrompts(); }
+
+/* ---- second tier: places the model knows, verified before they appear ---- */
+let sugLayer=null;
+function drawSugMarkers(list){
+  if(sugLayer){ map.removeLayer(sugLayer); sugLayer=null; }
+  if(!list || !list.length) return;
+  sugLayer=L.layerGroup(list.map(p=>{
+    const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'lm',
+      html:'<div class="mk sug">'+svg(p.kind||'eat')+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
+      title:p.name});
+    m.on('click',()=>openSuggestion(p));
+    return m;
+  })).addTo(map);
+}
+async function fetchSuggestions(text, known){
+  S.sug={loading:true, places:[]};
+  renderPlan();
+  try{
+    const r=await fetch('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({q:text, known})});
+    const d=await r.json();
+    S.sug={loading:false, places:(d.places||[]), proposed:d.proposed, verified:d.verified};
+  }catch(e){ S.sug={loading:false, places:[], failed:true}; }
+  drawSugMarkers(S.sug.places);
+  renderPlan();
+}
+function sugCard(p){
+  const el=document.createElement('div');
+  el.className='card sug'; el.tabIndex=0;
+  el.innerHTML='<div class="pin">'+svg(p.kind||'eat')+'</div>'+
+    '<div style="min-width:0;flex:1"><h3>'+esc(p.name)+'</h3>'+
+    '<p class="meta">'+esc([p.area, p.postcode].filter(Boolean).join(' · '))+'</p>'+
+    '<p class="snip">'+esc(p.why||'')+'</p>'+
+    '<div class="tagrow"><span class="tag">not in your bank</span>'+
+    (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
+  el.onclick=()=>openSuggestion(p);
+  return el;
+}
+function openSuggestion(p){
+  dname.textContent=p.name;
+  let h='<div class="dmeta"><span class="tag">not in your bank</span>'+
+    '<span class="tag">'+esc(CATS[p.kind]?CATS[p.kind].label:'Place')+'</span>'+
+    (p.area?'<span class="tag">'+esc(p.area)+'</span>':'')+'</div>';
+  h+='<blockquote class="quote"><p>'+esc(p.why||'')+'</p><cite>suggested by the model, address checked against the food hygiene register</cite></blockquote>';
+  if(p.address) h+='<p class="kv"><b>Address:</b> '+esc(p.address)+(p.postcode?', '+esc(p.postcode):'')+'</p>';
+  if(S.me) h+='<p class="kv"><b>Distance:</b> '+fmtDist(dist(S.me,[p.lat,p.lng]))+' away</p>';
+  h+='<p class="note">This one is not from your bank. It has a real registered address, but nobody you trust has vouched for it.</p>';
+  dbody.innerHTML=h; dbody.scrollTop=0;
+  const qy=encodeURIComponent(p.name+', '+(p.address||p.area||'London'));
+  dactions.innerHTML='<a class="btn pri" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>'+
+    '<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(p.name+' london')+'">Instagram</a>';
+  detail.classList.add('open'); document.body.classList.add('detail-open');
+  if(window.innerWidth<=860){ setTimeout(()=>{ map.invalidateSize();
+    map.setView([p.lat,p.lng], 16, {animate:true}); }, 120); }
+}
 
 async function ask(text){
   closeDrop();
@@ -1748,6 +1814,8 @@ async function ask(text){
   const local=parseLocal(text);
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
+  const known=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(d=>d.n);
+  fetchSuggestions(text, known);
   try{
     const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({q:text})});
@@ -1845,6 +1913,27 @@ function pairCard(p){
   el.onclick=()=>openDetail(p.a,true);
   return el;
 }
+function renderSuggestions(){
+  const sg=S.sug;
+  if(!sg) return;
+  if(sg.loading){
+    listEl.insertAdjacentHTML('beforeend',
+      '<div class="sechead">Also worth knowing</div><div class="loadingrow">Looking beyond your bank…</div>');
+    return;
+  }
+  if(!sg.places.length) return;
+  const head=document.createElement('div');
+  head.className='sechead';
+  head.innerHTML='Not in your bank <span class="badge">'+sg.places.length+' suggested</span>';
+  listEl.appendChild(head);
+  listEl.insertAdjacentHTML('beforeend',
+    '<div class="secnote">The model put these forward and each address was checked against the '+
+    'UK food hygiene register. Nobody you trust has vouched for them.</div>');
+  const f=document.createDocumentFragment();
+  sg.places.forEach(p=>f.appendChild(sugCard(p)));
+  listEl.appendChild(f);
+}
+
 function renderPlan(){
   const p=S.plan;
   listEl.innerHTML='';
@@ -1879,6 +1968,7 @@ function renderPlan(){
   if(p.type==='pairs') p.pairs.forEach(x=>frag.appendChild(pairCard(x)));
   else p.rows.forEach(d=>frag.appendChild(card(d)));
   listEl.appendChild(frag);
+  renderSuggestions();
   if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
 }
 
