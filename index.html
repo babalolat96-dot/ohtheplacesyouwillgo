@@ -729,7 +729,6 @@ a{color:var(--accent)}
   display:flex; flex-direction:column; min-height:0; min-width:0; position:relative;
   background:var(--surface); border-right:1px solid var(--line); z-index:2;
   overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch;
-  overscroll-behavior-y:contain;
 }
 
 /* ---------- header ---------- */
@@ -1037,12 +1036,14 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
     box-shadow:0 -8px 28px rgba(0,0,0,.22);
     transform:translateY(var(--sheetY, 52dvh));
     transition:transform .3s cubic-bezier(.32,.72,0,1);
-    touch-action:none;
+    touch-action:auto;
   }
   .sheet.dragging{transition:none}
   .sheet .list{flex:1; overflow-y:hidden; overscroll-behavior:contain;
     -webkit-overflow-scrolling:touch; touch-action:pan-y}
-  .sheet.full .list{overflow-y:auto}
+  .sheet.open .list{overflow-y:auto}
+  .grip{touch-action:none}
+  .sheet .bar{touch-action:none}
   .grip{flex:none; padding:9px 0 5px; cursor:grab}
   .grip i{display:block; width:40px; height:4px; border-radius:99px;
     background:var(--line); margin:0 auto}
@@ -1401,13 +1402,18 @@ function buildSuggestions(){
   suggestions=[];
   const words=t.split(/\s+/).filter(Boolean).length;
   if(t.length>=2){
-    if(words>=2) suggestions.push({type:'ask', text:t});
-    gazSearch(t).forEach(g=>suggestions.push({type:'place', g}));
+    const places=gazSearch(t);
     const tl=t.toLowerCase();
-    DATA.filter(d=>d.n.toLowerCase().includes(tl)).slice(0,5)
-        .forEach(d=>suggestions.push({type:'spot', d}));
-    if(!suggestions.length && t.length>=3)
-      suggestions.push({type:'lookup', text:t});
+    const spots=DATA.filter(d=>d.n.toLowerCase().includes(tl)).slice(0,5);
+    // an unrecognised name is usually "where is this place"; a request is not.
+    // when it could be either, offer both, in the likelier order.
+    const readsAsRequest = !!parseLocal(t);
+    const canLookUp = !places.length && !spots.length && t.length>=3;
+    if(canLookUp && !readsAsRequest) suggestions.push({type:'lookup', text:t});
+    if(words>=2) suggestions.push({type:'ask', text:t});
+    if(canLookUp && readsAsRequest) suggestions.push({type:'lookup', text:t});
+    places.forEach(g=>suggestions.push({type:'place', g}));
+    spots.forEach(d=>suggestions.push({type:'spot', d}));
 
   }
   if(!suggestions.length){ qdrop.classList.remove('open'); qdrop.innerHTML=''; return; }
@@ -1466,9 +1472,12 @@ q.oninput=()=>{
   S.q=q.value.trim().toLowerCase();
   sw.classList.toggle('has',!!q.value);
   sw.classList.toggle('ask', askable());
+  if(S.q && (S.plan || S.sug)){        // starting a new one wipes the last
+    S.plan=null; S.sug=null; drawSugMarkers([]);
+  }
   buildSuggestions(); render();
 };
-q.onfocus=buildSuggestions;
+q.onfocus=()=>{ if(q.value.trim()) q.select(); buildSuggestions(); };
 q.onblur=()=>setTimeout(closeDrop,140);
 q.onkeydown=e=>{
   if(e.key==='Escape'){ closeDrop(); q.blur(); return; }
@@ -1792,7 +1801,7 @@ function sugCard(p){
     '<div style="min-width:0;flex:1"><h3>'+esc(p.name)+'</h3>'+
     '<p class="meta">'+esc([p.area, p.postcode].filter(Boolean).join(' · '))+'</p>'+
     '<p class="snip">'+esc(p.why||'')+'</p>'+
-    '<div class="tagrow"><span class="tag">'+(p.via==='register'?'address confirmed':'address from map data')+'</span>'+
+    '<div class="tagrow"><span class="tag">'+(p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
     (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
   el.onclick=()=>openSuggestion(p);
   return el;
@@ -1802,10 +1811,12 @@ function openSuggestion(p){
   let h='<div class="dmeta"><span class="tag">not in your bank</span>'+
     '<span class="tag">'+esc(CATS[p.kind]?CATS[p.kind].label:'Place')+'</span>'+
     (p.area?'<span class="tag">'+esc(p.area)+'</span>':'')+'</div>';
-  h+='<blockquote class="quote"><p>'+esc(p.why||'')+'</p><cite>suggested by the model · '+(p.via==='register'?'address confirmed in the UK food hygiene register':'address found in OpenStreetMap')+'</cite></blockquote>';
+  h+='<blockquote class="quote"><p>'+esc(p.why||'')+'</p><cite>suggested by the model · '+(p.via==='register'?'address confirmed in the UK food hygiene register':p.via==='map'?'found in OpenStreetMap':'the street address exists, the name is the model\'s word')+'</cite></blockquote>';
   if(p.address) h+='<p class="kv"><b>Address:</b> '+esc(p.address)+(p.postcode?', '+esc(p.postcode):'')+'</p>';
   if(S.me) h+='<p class="kv"><b>Distance:</b> '+fmtDist(dist(S.me,[p.lat,p.lng]))+' away</p>';
-  h+='<p class="note">This one is not from your bank. It has a real registered address, but nobody you trust has vouched for it.</p>';
+  h+='<p class="note">Not from your bank. '+(p.via==='address'
+  ? 'The address is real but the venue name could not be independently confirmed, so treat it as a lead.'
+  : 'It has a real registered address, but nobody you trust has vouched for it.')+'</p>';
   dbody.innerHTML=h; dbody.scrollTop=0;
   const qy=encodeURIComponent(p.name+', '+(p.address||p.area||'London'));
   dactions.innerHTML='<a class="btn pri" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>'+
@@ -2250,6 +2261,7 @@ function applySnap(i, animate=true){
   if(!animate) sheet.classList.add('dragging');
   sheet.style.setProperty('--sheetY', SNAPS[snapIdx]+'dvh');
   sheet.classList.toggle('full', snapIdx===2);
+  sheet.classList.toggle('open', snapIdx>0);
   if(snapIdx!==2) listEl.scrollTop=0;
   if(!animate) requestAnimationFrame(()=>sheet.classList.remove('dragging'));
 }
@@ -2260,10 +2272,13 @@ function bindSheet(){
   const startOK=e=>{
     const t=e.target;
     if(t.closest('.grip') || t.closest('.bar')) return true;
-    return snapIdx===2 ? listEl.scrollTop<=0 : true;   // expanded: only when list is at the top
+    if(snapIdx===0) return true;                 // collapsed: anywhere drags it open
+    return listEl.scrollTop<=0;                  // otherwise only from the top of the list
   };
+  let lastFromGrip=false;
   const down=e=>{
     if(!startOK(e)) return;
+    lastFromGrip=!!(e.target.closest('.grip')||e.target.closest('.bar'));
     dragging=true; y0=e.touches[0].clientY; t0=Date.now();
     base=SNAPS[snapIdx]*vh();
     sheet.classList.add('dragging');
@@ -2271,6 +2286,7 @@ function bindSheet(){
   const move=e=>{
     if(!dragging) return;
     const dy=e.touches[0].clientY-y0;
+    if(dy<0 && snapIdx>0 && listEl.scrollTop<=0 && !lastFromGrip){ dragging=false; return; }
     const y=Math.max(SNAPS[2]*vh(), Math.min(SNAPS[0]*vh()+40, base+dy));
     if(Math.abs(dy)>3 && e.cancelable) e.preventDefault();
     sheet.style.setProperty('--sheetY', y+'px');
