@@ -1406,10 +1406,16 @@ function buildSuggestions(){
     const tl=t.toLowerCase();
     DATA.filter(d=>d.n.toLowerCase().includes(tl)).slice(0,5)
         .forEach(d=>suggestions.push({type:'spot', d}));
+    if(!suggestions.length && t.length>=3)
+      suggestions.push({type:'lookup', text:t});
 
   }
   if(!suggestions.length){ qdrop.classList.remove('open'); qdrop.innerHTML=''; return; }
   qdrop.innerHTML = suggestions.map((s0,i)=>{
+    if(s0.type==='lookup')
+      return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
+        '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>'+
+        '</span><span>Not in your bank. <b>Look up '+esc(s0.text)+'</b></span></button>';
     if(s0.type==='ask')
       return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
         '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 4.6 18.9L22 22l-1.1-5.4A10 10 0 0 0 12 2zm0 5a3 3 0 0 1 1.7 5.5c-.5.3-.7.6-.7 1v.5h-2v-.8c0-1 .5-1.6 1.3-2.1.5-.3.7-.6.7-1a1 1 0 1 0-2 0H9a3 3 0 0 1 3-3zm-1 8.5h2v2h-2v-2z"/></svg>'+
@@ -1430,6 +1436,7 @@ function closeDrop(){ qdrop.classList.remove('open'); hiIdx=-1; }
 function choose(s0){
   if(!s0) return;
   if(s0.type==='ask'){ ask(s0.text); return; }
+  if(s0.type==='lookup'){ lookup(s0.text); return; }
   closeDrop();
   if(s0.type==='place'){
     q.value=''; S.q=''; sw.classList.remove('has');
@@ -1785,7 +1792,7 @@ function sugCard(p){
     '<div style="min-width:0;flex:1"><h3>'+esc(p.name)+'</h3>'+
     '<p class="meta">'+esc([p.area, p.postcode].filter(Boolean).join(' · '))+'</p>'+
     '<p class="snip">'+esc(p.why||'')+'</p>'+
-    '<div class="tagrow"><span class="tag">not in your bank</span>'+
+    '<div class="tagrow"><span class="tag">'+(p.via==='register'?'address confirmed':'address from map data')+'</span>'+
     (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
   el.onclick=()=>openSuggestion(p);
   return el;
@@ -1795,7 +1802,7 @@ function openSuggestion(p){
   let h='<div class="dmeta"><span class="tag">not in your bank</span>'+
     '<span class="tag">'+esc(CATS[p.kind]?CATS[p.kind].label:'Place')+'</span>'+
     (p.area?'<span class="tag">'+esc(p.area)+'</span>':'')+'</div>';
-  h+='<blockquote class="quote"><p>'+esc(p.why||'')+'</p><cite>suggested by the model, address checked against the food hygiene register</cite></blockquote>';
+  h+='<blockquote class="quote"><p>'+esc(p.why||'')+'</p><cite>suggested by the model · '+(p.via==='register'?'address confirmed in the UK food hygiene register':'address found in OpenStreetMap')+'</cite></blockquote>';
   if(p.address) h+='<p class="kv"><b>Address:</b> '+esc(p.address)+(p.postcode?', '+esc(p.postcode):'')+'</p>';
   if(S.me) h+='<p class="kv"><b>Distance:</b> '+fmtDist(dist(S.me,[p.lat,p.lng]))+' away</p>';
   h+='<p class="note">This one is not from your bank. It has a real registered address, but nobody you trust has vouched for it.</p>';
@@ -1806,6 +1813,28 @@ function openSuggestion(p){
   detail.classList.add('open'); document.body.classList.add('detail-open');
   if(window.innerWidth<=860){ setTimeout(()=>{ map.invalidateSize();
     map.setView([p.lat,p.lng], 16, {animate:true}); }, 120); }
+}
+
+async function lookup(name){
+  closeDrop();
+  q.value=''; S.q=''; sw.classList.remove('has'); sw.classList.remove('ask');
+  S.plan={type:'rows', rows:[], origin:null, widened:false,
+          plan:{reply:'Looking up '+name+'…', asked:name, via:'understood'}};
+  render();
+  await fetchSuggestions('Where exactly is "'+name+'" in London? Return that venue itself.', []);
+  const first=(S.sug&&S.sug.places&&S.sug.places[0]);
+  if(first){
+    S.plan.plan.reply=first.name+' is not in your bank, but here it is.';
+    S.me=[first.lat,first.lng]; S.meLabel=first.name; radiusSel.disabled=false; drawMe();
+    const near=DATA.filter(d=>d.lat).map(d=>({d,km:dist(S.me,[d.lat,d.lng])}))
+      .sort((a,b)=>a.km-b.km).filter(x=>x.km<1.5).slice(0,12);
+    S.plan.rows=near.map(x=>x.d);
+    S.plan.origin={pt:S.me,label:first.name};
+    map.flyTo(S.me, 16, {duration:.8});
+  } else {
+    S.plan.plan.reply='Could not place '+name+'.';
+  }
+  render();
 }
 
 async function ask(text){
@@ -1921,7 +1950,14 @@ function renderSuggestions(){
       '<div class="sechead">Also worth knowing</div><div class="loadingrow">Looking beyond your bank…</div>');
     return;
   }
-  if(!sg.places.length) return;
+  if(!sg.places.length){
+    listEl.insertAdjacentHTML('beforeend',
+      '<div class="sechead">Not in your bank</div><div class="secnote">'+
+      (sg.failed ? 'Could not reach the wider search just now.'
+       : sg.proposed ? ('The model put forward '+sg.proposed+', but none could be confirmed against the food hygiene register, so I have left them out.')
+       : 'Nothing else came up beyond your own list.')+'</div>');
+    return;
+  }
   const head=document.createElement('div');
   head.className='sechead';
   head.innerHTML='Not in your bank <span class="badge">'+sg.places.length+' suggested</span>';

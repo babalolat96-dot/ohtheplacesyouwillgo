@@ -43,13 +43,13 @@ const SCHEMA = {
     properties: {
       places: {
         type: 'array',
-        maxItems: 6,
+        maxItems: 4,
         items: {
           type: 'object',
           properties: {
             name: { type: 'string', description: 'The venue name as it trades, exactly.' },
             area: { type: 'string', description: 'Neighbourhood, e.g. Notting Hill.' },
-            street: { type: 'string', description: 'Street address if you know it. Leave empty rather than guess.' },
+            street: { type: 'string', description: 'Street address if you know it, e.g. "29 Romilly Street". This is what lets the place be confirmed, so give it whenever you know it. Leave empty rather than guess.' },
             kind: { type: 'string', enum: ['eat', 'drink', 'coffee', 'outdoors', 'culture', 'shop'] },
             why: { type: 'string', description: 'One short line on why it fits. Under 18 words.' },
             confident: { type: 'boolean', description: 'False if you are unsure this place is currently open or exists under this name.' },
@@ -72,31 +72,71 @@ Rules:
 - Never repeat a venue that is already in the user's list, which is given to you.
 - If the request mentions a specific venue, places physically near it are ideal,
   including anything in the same building.
-- Do not invent street addresses. An empty street is fine.`;
+- Give the street whenever you know it. It is what allows a place to be confirmed.
+  Do not invent one; an empty street is better than a wrong one.`;
 
-async function fsaCheck(name, area) {
-  // returns {address, postcode, lat, lng} or null
-  const q = new URLSearchParams({ name, address: area ? area + ', London' : 'London', pageSize: '8' });
+const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const tokens = s => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+
+function nameMatches(candidate, target) {
+  const c = norm(candidate), t = norm(target);
+  if (!c || !t) return false;
+  if (c === t || c.startsWith(t) || t.startsWith(c) || c.includes(t) || t.includes(c)) return true;
+  const ct = tokens(candidate), tt = tokens(target);
+  if (!tt.length) return false;
+  const hit = tt.filter(w => ct.some(x => x.startsWith(w) || w.startsWith(x))).length;
+  return hit / tt.length >= 0.6;
+}
+
+async function fsaQuery(name, area) {
+  const q = new URLSearchParams({ name, address: area ? area + ', London' : 'London', pageSize: '12' });
   try {
     const r = await fetch('https://api.ratings.food.gov.uk/Establishments?' + q, {
       headers: { 'x-api-version': '2', accept: 'application/json' },
     });
-    if (!r.ok) return null;
-    const d = await r.json();
-    const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const target = norm(name);
-    for (const e of d.establishments || []) {
-      const n = norm(e.BusinessName);
-      if (!(n === target || n.startsWith(target) || target.startsWith(n) || n.includes(target))) continue;
+    if (!r.ok) return [];
+    return ((await r.json()).establishments || []);
+  } catch (e) { return []; }
+}
+
+async function fsaCheck(name, area) {
+  // try the name as given, then stripped of punctuation, then its longest word
+  const words = tokens(name);
+  const variants = [name, name.replace(/[^A-Za-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()];
+  if (words.length) variants.push(words.slice().sort((a, b) => b.length - a.length)[0]);
+  const seen = new Set();
+  for (const v of variants) {
+    if (!v || seen.has(v.toLowerCase())) continue;
+    seen.add(v.toLowerCase());
+    for (const e of await fsaQuery(v, area)) {
+      if (!nameMatches(e.BusinessName, name)) continue;
       const g = e.geocode || {};
       const lat = parseFloat(g.latitude), lng = parseFloat(g.longitude);
       if (!(lat > 51.2 && lat < 51.8 && lng > -0.6 && lng < 0.4)) continue;
       const addr = [e.AddressLine1, e.AddressLine2, e.AddressLine3, e.AddressLine4]
         .filter(Boolean).join(', ');
-      return { name: e.BusinessName, address: addr, postcode: e.PostCode, lat, lng };
+      return { name: e.BusinessName, address: addr, postcode: e.PostCode, lat, lng, via: 'register' };
     }
-  } catch (e) {}
+  }
   return null;
+}
+
+// fallback: the model gave a street address, so geocode that instead
+async function geoCheck(name, street, area) {
+  const q = [name, street, area, 'London, UK'].filter(Boolean).join(', ');
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
+      q, format: 'json', limit: '1', countrycodes: 'gb',
+      viewbox: '-0.55,51.72,0.35,51.25', bounded: '1',
+    }), { headers: { 'User-Agent': 'oh-the-places/1.0 (personal)' } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    if (!d.length) return null;
+    const lat = parseFloat(d[0].lat), lng = parseFloat(d[0].lon);
+    if (!(lat > 51.2 && lat < 51.8 && lng > -0.6 && lng < 0.4)) return null;
+    return { name, address: street || d[0].display_name.split(',').slice(0, 3).join(','),
+             postcode: null, lat, lng, via: 'map' };
+  } catch (e) { return null; }
 }
 
 exports.handler = async (event) => {
@@ -119,7 +159,7 @@ exports.handler = async (event) => {
       method: 'POST',
       headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
       body: JSON.stringify({
-        model, max_tokens: 900, system: SYSTEM,
+        model, max_tokens: 700, system: SYSTEM,
         tools: [SCHEMA], tool_choice: { type: 'tool', name: 'suggestions' },
         messages: [{ role: 'user', content:
           `Request: ${q}\n\nAlready in their list, do not repeat: ${known || '(nothing relevant)'}` }],
@@ -133,13 +173,15 @@ exports.handler = async (event) => {
     const raw = (block && block.input && block.input.places) || [];
 
     // verify every one against the FSA register, in parallel
-    const checked = await Promise.all(raw.slice(0, 6).map(async p => {
-      const hit = await fsaCheck(p.name, p.area);
+    const checked = await Promise.all(raw.slice(0, 4).map(async p => {
+      let hit = await fsaCheck(p.name, p.area);
+      if (!hit && p.street) hit = await geoCheck(p.name, p.street, p.area);
+      if (!hit) hit = await geoCheck(p.name, null, p.area);
       if (!hit) return null;
       return {
         name: hit.name || p.name, kind: p.kind, why: p.why, area: p.area || null,
         address: hit.address, postcode: hit.postcode, lat: hit.lat, lng: hit.lng,
-        confident: p.confident !== false,
+        via: hit.via, confident: p.confident !== false,
       };
     }));
     const places = checked.filter(Boolean);
