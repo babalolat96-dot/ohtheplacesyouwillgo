@@ -6,6 +6,89 @@ const KEY_NAMES = [
   'ANTHROPIC_API_KEY', 'OTP_MODEL_KEY', 'CLAUDE_API_KEY',
   'ANTHROPIC_KEY', 'BABLOAPI', 'API_KEY',
 ];
+const G_KEY_NAMES = ['GOOGLE_PLACES_KEY', 'GOOGLE_PLACES_API_KEY', 'GOOGLE_API_KEY', 'PLACES_KEY'];
+
+function googleKey() {
+  for (const n of G_KEY_NAMES) {
+    const v = process.env[n];
+    if (v && v.trim()) return v.trim();
+  }
+  for (const v of Object.values(process.env)) {
+    if (/^AIza[0-9A-Za-z_-]{20,}$/.test(String(v || '').trim())) return String(v).trim();
+  }
+  return null;
+}
+
+// Google is the best register of small bars, and the only one that tells us
+// what kind of thing a result is. A solicitors' office is not a bar.
+const G_BAD = new Set([
+  'lawyer', 'accounting', 'insurance_agency', 'real_estate_agency', 'finance',
+  'bank', 'atm', 'consultant', 'corporate_office', 'government_office',
+  'local_government_office', 'city_hall', 'courthouse', 'post_office',
+  'doctor', 'dentist', 'hospital', 'pharmacy', 'drugstore', 'veterinary_care',
+  'funeral_home', 'cemetery', 'school', 'primary_school', 'secondary_school',
+  'university', 'child_care_agency', 'church', 'mosque', 'synagogue',
+  'place_of_worship', 'police', 'fire_station', 'car_repair', 'car_dealer',
+  'gas_station', 'parking', 'storage', 'moving_company', 'plumber',
+  'electrician', 'general_contractor', 'locksmith', 'laundry',
+  'travel_agency', 'employment_agency',
+]);
+const G_GOOD = new Set([
+  'restaurant', 'bar', 'pub', 'wine_bar', 'bar_and_grill', 'cafe', 'coffee_shop',
+  'bakery', 'night_club', 'meal_takeaway', 'food', 'food_court', 'ice_cream_shop',
+  'sandwich_shop', 'tea_house', 'dessert_shop', 'diner', 'brunch_restaurant',
+  'breakfast_restaurant', 'fine_dining_restaurant', 'art_gallery', 'museum',
+  'tourist_attraction', 'performing_arts_theater', 'movie_theater', 'concert_hall',
+  'cultural_landmark', 'historical_place', 'book_store', 'record_store', 'market',
+  'shopping_mall', 'store', 'park', 'garden', 'plaza', 'event_venue', 'hotel',
+]);
+function gIsVenue(p) {
+  const types = p.types || [];
+  const primary = p.primaryType || types[0] || '';
+  if (G_BAD.has(primary)) return false;
+  if (types.some(t => G_BAD.has(t)) && !types.some(t => G_GOOD.has(t))) return false;
+  if (G_GOOD.has(primary) || /_restaurant$/.test(primary) || /_store$/.test(primary)) return true;
+  return types.some(t => G_GOOD.has(t) || /_restaurant$/.test(t));
+}
+
+async function googleCheck(name, area, street) {
+  const key = googleKey();
+  if (!key) return null;
+  const q = [name, street, area, 'London'].filter(Boolean).join(', ');
+  try {
+    const r = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.shortFormattedAddress,' +
+          'places.formattedAddress,places.location,places.primaryType,places.types,places.businessStatus',
+      },
+      body: JSON.stringify({
+        textQuery: q, maxResultCount: 5, languageCode: 'en-GB', regionCode: 'GB',
+        locationBias: { rectangle: {
+          low: { latitude: 51.25, longitude: -0.56 },
+          high: { latitude: 51.72, longitude: 0.34 } } },
+      }),
+    });
+    if (!r.ok) return null;
+    for (const p of ((await r.json()).places || [])) {
+      const L = p.location || {};
+      if (!(L.latitude > 51.2 && L.latitude < 51.8 && L.longitude > -0.6 && L.longitude < 0.4)) continue;
+      if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') continue;
+      if (!gIsVenue(p)) continue;
+      const got = (p.displayName || {}).text || '';
+      if (!nameMatches(got, name)) continue;
+      return {
+        name: got || name,
+        address: p.shortFormattedAddress || p.formattedAddress || null,
+        postcode: null, lat: L.latitude, lng: L.longitude,
+        placeId: p.id, via: 'google',
+      };
+    }
+  } catch (e) {}
+  return null;
+}
 
 function findKey() {
   for (const n of KEY_NAMES) {
@@ -78,8 +161,10 @@ Rules:
 - A bar inside, above or below another venue is a good answer. Give the building's
   address in street, and say the relationship in why.`;
 
-const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const tokens = s => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
+const norm = s => (s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
+const STOP = new Set(['the', 'and']);
+const tokens = s => (s || '').toLowerCase().replace(/&/g, ' and ')
+  .split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP.has(w));
 
 function nameMatches(candidate, target) {
   const c = norm(candidate), t = norm(target);
@@ -159,7 +244,8 @@ async function geoCheck(name, street, area) {
       const head = (h.display_name || '').split(',')[0];
       if (t.strict) {
         // a name-only lookup must land on an actual venue, not a building or a street
-        const POI = ['amenity', 'shop', 'tourism', 'leisure', 'craft', 'office'];
+        // no 'office': it let a solicitors' office answer for a bar of the same name
+        const POI = ['amenity', 'shop', 'tourism', 'leisure', 'craft'];
         if (!POI.includes(h.class)) continue;
         if (!nameMatches(head, name) && !nameMatches(head, short)) continue;
         return {
@@ -213,13 +299,16 @@ exports.handler = async (event) => {
 
     // verify every one against the FSA register, in parallel
     const checked = await Promise.all(raw.slice(0, 4).map(async p => {
-      let hit = await fsaCheck(p.name, p.area);
+      // Google first: it carries the small bars, and it knows what a place is
+      let hit = await googleCheck(p.name, p.area, p.street);
+      if (!hit) hit = await fsaCheck(p.name, p.area);
       if (!hit && p.street) hit = await geoCheck(p.name, p.street, p.area);
       if (!hit) hit = await geoCheck(p.name, null, p.area);
       if (!hit) return null;
       return {
         name: hit.name || p.name, kind: p.kind, why: p.why, area: p.area || null,
         address: hit.address, postcode: hit.postcode, lat: hit.lat, lng: hit.lng,
+        placeId: hit.placeId || null,
         via: hit.via, confident: p.confident !== false,
       };
     }));
