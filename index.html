@@ -916,6 +916,10 @@ body.detail-open .mobtab{display:none}
   background:var(--surface-2); color:var(--ink-3); border-radius:999px;
   padding:4px 11px; font-size:11.5px; cursor:pointer}
 .rswap:hover{border-color:var(--accent); color:var(--accent)}
+.widerbtn{display:block; width:calc(100% - 32px); margin:14px 16px 18px;
+  padding:11px; border:1px dashed var(--ink-3); border-radius:10px;
+  background:none; color:var(--ink-3); font-size:13px; cursor:pointer}
+.widerbtn:hover{border-color:var(--accent); color:var(--accent)}
 .missed{margin:0 16px 8px; padding:8px 11px; border-radius:9px;
   background:var(--surface-2); border:1px solid var(--line);
   font-size:11.5px; color:var(--ink-3)}
@@ -1747,9 +1751,19 @@ function parseLocal(text){
     party: /\bfor two\b|\bthe two of us\b/.test(t) ? 2 : null,
     reply: null, via:'built in',
   };
+  /* is this an occasion being planned, or one thing needed right now? */
+  plan.wantsAfter = stops.length>=2 || PLANWORDS.test(t);
   const confident = stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)) || places.length>0 || venues.length>0;
+  /* strong enough that asking the model would only confirm what we already read.
+     Every model call costs a serverless invocation, so we skip the ones we
+     do not need rather than asking twice for the same answer. */
+  plan._strong = confident
+    && stops.every(x=>x.kind!=='any' || (x.cuisines&&x.cuisines.length))
+    && (places.length>0 || venues.length>0 || NEARME.test(t))
+    && !/\?|\b(what|which|where should|any ideas|suggest|recommend|help me)\b/.test(t);
   return confident ? plan : null;
 }
+const PLANWORDS=/\b(date|night out|take (her|him|them)|for after|after(wards)?|options for|plan|planning|evening|going out|day out)\b/;
 
 /* ---- turn a plan into results ---- */
 function stopMatches(st){
@@ -2225,8 +2239,19 @@ async function ask(text){
   const local=parseLocal(text);
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
+
   const known=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(d=>d.n);
-  fetchSuggestions(text, known);
+  /* the wider search is a model call plus several lookups. Run it only when
+     your own bank came up short; otherwise offer it as a button. */
+  const thin = !S.plan
+    || (S.plan.type==='rows' && S.plan.rows.length<4)
+    || (S.plan.type==='anchor' && (!S.plan.anchor || S.plan.onward.length<2));
+  if(thin) fetchSuggestions(text, known);
+  else { S.sug={idle:true, text, known}; renderPlan(); }
+
+  // the built-in parser already read this one completely: no need to ask twice
+  if(local && local._strong){ return; }
+
   try{
     const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({q:text})});
@@ -2335,6 +2360,14 @@ function pairCard(p){
 function renderSuggestions(){
   const sg=S.sug;
   if(!sg) return;
+  if(sg.idle){
+    const b=document.createElement('button');
+    b.className='widerbtn'; b.type='button';
+    b.textContent='Look beyond your bank';
+    b.onclick=()=>fetchSuggestions(sg.text, sg.known);
+    listEl.appendChild(b);
+    return;
+  }
   if(sg.loading){
     listEl.insertAdjacentHTML('beforeend',
       '<div class="sechead">Also worth knowing</div><div class="loadingrow">Looking beyond your bank…</div>');
@@ -2591,21 +2624,37 @@ function paintLive(name, live){
 
 /* ============ your own saved places, shared across your devices ============ */
 const PASSKEY='otp:v1:pass';
+let SAVE_BROKEN=null;      // set if the store could not be reached at load
 const slugOf=n=>String(n||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 const inBank=n=>{ const k=slugOf(n); return DATA.some(d=>slugOf(d.n)===k); };
 
-function toast(msg){
+function toast(msg, ms){
+  document.querySelectorAll('.toast').forEach(x=>x.remove());
   const el=document.createElement('div'); el.className='toast'; el.textContent=msg;
+  el.onclick=()=>el.remove();
   document.body.appendChild(el);
   setTimeout(()=>{ el.style.transition='opacity .4s'; el.style.opacity='0';
-    setTimeout(()=>el.remove(),450); }, 2200);
+    setTimeout(()=>el.remove(),450); }, ms||2600);
 }
 async function bankCall(payload){
   try{
-    const r=await fetch('/api/bank',{method:'POST',headers:{'Content-Type':'application/json'},
+    const r=await fetch('/api/saved',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)});
     return await r.json();
   }catch(e){ return {error:'offline'}; }
+}
+/* a save that quietly does nothing is the worst outcome, so say what broke */
+const SAVEFAIL={
+  no_store:'Storage is not set up on Netlify yet.',
+  no_pass_set:'OTP_PASS is not set on Netlify yet.',
+  bad_pass:'That passphrase did not match.',
+  bad_place:'That place had no usable location.',
+  offline:'No connection to the site.',
+};
+function sayFail(j){
+  const why=(j&&j.error)||'unknown';
+  toast(SAVEFAIL[why] || ('Could not save: '+why), 5000);
+  if(j&&j.detail) console.warn('[save]', why, j.detail);
 }
 /* one small prompt, once per device, then remembered */
 function askPass(){
@@ -2650,6 +2699,7 @@ function refreshMineChip(){
 /* on load, pull whatever this or another device has saved */
 async function loadSaved(){
   const j=await bankCall({action:'list'});
+  if(j && j.error){ SAVE_BROKEN=j; console.warn('[saved places]', j.error, j.detail||''); return; }
   if(!j || !j.places || !j.places.length) return;
   let added=0;
   j.places.forEach(p=>{ if(p && p.lat && !inBank(p.n)){ addToBoard(p); added++; } });
@@ -2657,6 +2707,7 @@ async function loadSaved(){
 }
 /* p is a Google or model suggestion; turn it into a bank record and store it */
 async function savePlace(p, btn){
+  if(SAVE_BROKEN){ sayFail(SAVE_BROKEN); return false; }
   let pass=localStorage.getItem(PASSKEY);
   if(!pass){ pass=await askPass(); if(!pass) return false; }
   if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
@@ -2682,10 +2733,7 @@ async function savePlace(p, btn){
     return true;
   }
   if(btn){ btn.disabled=false; btn.textContent='Save to my bank'; }
-  toast(j && j.error==='no_pass_set'
-    ? 'Set OTP_PASS on Netlify first'
-    : j && j.error==='bad_pass' ? 'That passphrase did not match'
-    : 'Could not save just now');
+  sayFail(j);
   return false;
 }
 async function unsavePlace(name){
@@ -2701,7 +2749,7 @@ async function unsavePlace(name){
     const x=document.getElementById('dclose'); if(x) x.click();
     toast('Removed from your bank');
     render();
-  } else toast('Could not remove that just now');
+  } else sayFail(j);
 }
 
 /* ============ opening hours: cached, and used to rank ============ */
