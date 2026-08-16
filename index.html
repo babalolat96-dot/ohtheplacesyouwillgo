@@ -895,6 +895,67 @@ body.detail-open .mobtab{display:none}
 .mk.sug svg{fill:var(--ink-3)}
 .loadingrow{padding:12px 16px; font-size:12.5px; color:var(--ink-3)}
 
+/* the plan */
+.route{padding:4px 0 8px}
+.rhead{padding:10px 16px 6px; font-size:12px; color:var(--ink-3)}
+.rhead b{color:var(--ink); font-weight:600}
+.rleg{position:relative; padding:10px 16px 12px; border-top:1px solid var(--line)}
+.rtime{display:flex; align-items:baseline; gap:9px; margin-bottom:6px}
+.rtime b{font-size:15px; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+.rtime span{font-size:10.5px; text-transform:uppercase; letter-spacing:.07em; color:var(--ink-3)}
+.rbody{display:flex; gap:11px; align-items:flex-start; cursor:pointer}
+.rbody .pin{flex:none; width:30px; height:30px; border-radius:9px; display:grid;
+  place-items:center; margin-top:1px}
+.rbody .pin svg{width:15px; height:15px; fill:#fff}
+.rtext{min-width:0; flex:1}
+.rtext h3{margin:0; font-size:15.5px; font-weight:600; letter-spacing:-.01em}
+.rtext .meta{margin:2px 0 0; font-size:12px; color:var(--ink-3)}
+.rtext .tagrow{margin-top:7px; display:flex; flex-wrap:wrap; gap:5px}
+.rleg.mine .pin{box-shadow:0 0 0 2px var(--accent)}
+.rswap{position:absolute; top:10px; right:14px; border:1px solid var(--line);
+  background:var(--surface-2); color:var(--ink-3); border-radius:999px;
+  padding:4px 11px; font-size:11.5px; cursor:pointer}
+.rswap:hover{border-color:var(--accent); color:var(--accent)}
+.missed{margin:0 16px 8px; padding:8px 11px; border-radius:9px;
+  background:var(--surface-2); border:1px solid var(--line);
+  font-size:11.5px; color:var(--ink-3)}
+.afterhead{padding:14px 16px 6px; font-size:11px; text-transform:uppercase;
+  letter-spacing:.06em; color:var(--ink-3); border-top:1px solid var(--line)}
+.after{display:flex; gap:11px; align-items:center; padding:9px 16px; cursor:pointer;
+  border-top:1px solid var(--line)}
+.after:first-of-type{border-top:none}
+.after:hover{background:var(--surface-2)}
+.after .pin.sm{flex:none; width:26px; height:26px; border-radius:8px; display:grid; place-items:center}
+.after .pin.sm svg{width:13px; height:13px; fill:#fff}
+.after .atext{min-width:0; flex:1}
+.after h4{margin:0; font-size:14px; font-weight:600; letter-spacing:-.01em}
+.after .meta{margin:1px 0 0; font-size:11.5px; color:var(--ink-3)}
+.after .now,.after .shut{flex:none; align-self:center}
+.after.mine .pin.sm{box-shadow:0 0 0 2px var(--accent)}
+
+/* your own saves */
+.mk.mine{box-shadow:0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,.35)}
+.card.mine .pin{box-shadow:0 0 0 2px var(--accent)}
+.tag.mine{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+.savebtn{margin-left:auto; align-self:flex-start; border:1px solid var(--line);
+  background:var(--surface-2); color:var(--ink); border-radius:8px; padding:5px 10px;
+  font-size:12px; cursor:pointer; white-space:nowrap}
+.savebtn:hover{border-color:var(--accent); color:var(--accent)}
+.savebtn.done{background:var(--accent); border-color:var(--accent); color:var(--accent-ink)}
+.passwrap{position:fixed; inset:0; background:rgba(0,0,0,.45); z-index:4000;
+  display:grid; place-items:center; padding:20px}
+.passbox{background:var(--bg); border:1px solid var(--line); border-radius:16px;
+  padding:20px; width:100%; max-width:340px; box-shadow:0 18px 50px rgba(0,0,0,.3)}
+.passbox h4{margin:0 0 6px; font-size:15px}
+.passbox p{margin:0 0 14px; font-size:12.5px; color:var(--ink-3)}
+.passbox input{width:100%; box-sizing:border-box; padding:11px 12px; font-size:16px;
+  border:1px solid var(--line); border-radius:10px; background:var(--surface-2); color:var(--ink)}
+.passbox .row{display:flex; gap:8px; margin-top:12px}
+.passbox .row .btn{flex:1; justify-content:center}
+.toast{position:fixed; left:50%; transform:translateX(-50%); bottom:26px; z-index:5000;
+  background:var(--ink); color:var(--bg); padding:10px 16px; border-radius:999px;
+  font-size:13px; box-shadow:0 8px 24px rgba(0,0,0,.3); max-width:88vw; text-align:center}
+
 .gphoto{width:100%; aspect-ratio:16/10; object-fit:cover; border-radius:12px;
   display:block; margin:0 0 12px; background:var(--surface-2)}
 .live{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 12px}
@@ -908,8 +969,9 @@ body.detail-open .mobtab{display:none}
 .hoursbox li{display:flex; justify-content:space-between; gap:12px; padding:2px 0}
 .hoursbox li.today{color:var(--ink); font-weight:600}
 .livewait{font-size:12px; color:var(--ink-3); margin:0 0 12px}
-.card .now{font-size:10.5px; padding:2px 7px; border-radius:999px; background:#0ca30c; color:#fff}
-.card .shut{font-size:10.5px; padding:2px 7px; border-radius:999px;
+.card .now,.rtext .now,.after .now{font-size:10.5px; padding:2px 7px; border-radius:999px;
+  background:#0ca30c; color:#fff}
+.card .shut,.rtext .shut,.after .shut{font-size:10.5px; padding:2px 7px; border-radius:999px;
   background:var(--surface-2); color:var(--ink-3); border:1px solid var(--line)}
 
 /* ---------- results ---------- */
@@ -1209,7 +1271,7 @@ const S = {plan:null, sug:null, anchorPlace:null, planWhen:null, q:'', vibes:new
            bands:new Set(), cuis:new Set(), srcs:new Set(),
            matchAll:false, me:null, meLabel:'', radius:0, sel:null};
 const BANDS=[['£','£ under ~15'],['££','££ 15-35'],['£££','£££ 35-70'],['££££','££££ 70+'],['Free','Free']];
-const SRCS=[['sitch',"so what's the sitch"],['olaloye',"Olaloye's list"]];
+const SRCS=[['sitch',"so what's the sitch"],['olaloye',"Olaloye's list"],['mine','Saved by you']];
 const CUISINES=(()=>{const c={};DATA.forEach(d=>{if(d.cui)c[d.cui]=(c[d.cui]||0)+1;});
   return Object.entries(c).filter(([k,n])=>n>=3 && !/^(restaurant|other)$/i.test(k)).sort((a,b)=>b[1]-a[1]).map(([k])=>k);})();
 
@@ -1792,6 +1854,149 @@ function whenFrom(plan){
   return base;
 }
 
+/* ================= the planner =================
+   Two stops or more is a night out, not a list. It gets an ordered route with
+   the time you would actually arrive at each place, the walk between them, and
+   every stop checked open at its own arrival time rather than at "now". */
+const DWELL={eat:95, drink:75, coffee:45, culture:80, outdoors:50, shop:35, any:60};
+const WALK_KMH=4.7;
+const walkMins=(a,b)=>Math.max(2, Math.round(dist(a,b)/WALK_KMH*60));
+const fmtT=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+const addMin=(d,m)=>new Date(d.getTime()+m*60000);
+
+/* what naturally follows what */
+const AFTER={eat:['drink','culture'], drink:['eat','drink'], coffee:['outdoors','shop','culture'],
+             outdoors:['coffee','eat','drink'], culture:['drink','eat'], shop:['coffee','eat'],
+             any:['drink','eat']};
+
+/* when the evening starts: what they said, else a sensible hour */
+function startTimeFor(plan){
+  const w=whenFrom(plan);
+  if(w) return w;
+  const d=new Date();
+  if(d.getHours()<17) d.setHours(19,30,0,0);           // planning ahead
+  else d.setMinutes(d.getMinutes()+20,0,0);            // already out
+  return d;
+}
+function dwellFor(kind){ return DWELL[kind]||DWELL.any; }
+
+/* the places you could go on to from here, and still find open */
+function onwardFrom(d, leaveAt, spec, banned, cap){
+  const specs = (spec && spec.kind) ? [spec] : (AFTER[d.c]||AFTER.any).map(k=>({kind:k}));
+  const seen=new Set([d.n]), out=[];
+  specs.forEach(sp=>{
+    stopMatches(sp).forEach(o=>{
+      if(!o.lat || seen.has(o.n) || (banned&&banned.has(o.n))) return;
+      const w=walkMins([d.lat,d.lng],[o.lat,o.lng]);
+      if(w>(cap||13)) return;
+      const arrive=addMin(leaveAt,w);
+      const st=openState(o.n, arrive);
+      if(st && !st.open) return;                       // no point offering a shut door
+      seen.add(o.n);
+      out.push({d:o, w, arrive, open:st?st.open:null, closingAt:st?st.closingAt:null,
+                cost: w - parseFloat(o.rat||0)*2.4 - (o.src==='mine'?5:0)});
+    });
+  });
+  out.sort((a,b)=>a.cost-b.cost);
+  return out;
+}
+/* a park or a gallery can sit a long way from anywhere. Rather than saying
+   there is nothing, walk a bit further and be honest about the minutes. */
+function onwardBest(d, leaveAt, spec, banned){
+  let last=[];
+  for(const cap of [13,22,32]){
+    last=onwardFrom(d, leaveAt, spec, banned, cap);
+    if(last.length>=3) return last;
+  }
+  return last;
+}
+
+/* A plan is one place, chosen partly because of what is around it, plus the
+   options that follow. It is never forced into a full itinerary. */
+function buildPlan(plan, origin, start, excluded){
+  const stops=(plan.stops&&plan.stops.length?plan.stops:[{kind:'any'}]);
+  const ex=excluded||new Set();
+  const after=stops[1]||null;
+
+  /* if they named the place, that is the anchor and we do not choose one */
+  let named=null;
+  if(origin && origin.venue) named=origin.venue;
+  else if(plan._gv) named={n:plan._gv.name, lat:plan._gv.lat, lng:plan._gv.lng,
+    c:plan._gv.kind||'eat', hood:plan._gv.area||null, area:plan._gv.address||null,
+    t:plan._gv.type||null, rat:plan._gv.rating!=null?String(plan._gv.rating):null,
+    band:null, cui:null, tags:[], m:[{b:''}], src:'google', addr:plan._gv.address||null,
+    aka:[], orders:[], prices:[], vibes:[], pc:null, reg:null, boro:null,
+    gid:plan._gv.id||null, conf:'google', fixed:true};
+
+  if(named){
+    const leave=addMin(start, dwellFor(named.c));
+    return {type:'anchor', plan, origin, start, excluded:ex, theirs:true,
+      anchor:{d:named, arrive:new Date(start), w:0,
+              open:(openState(named.n,start)||{}).open, closingAt:(openState(named.n,start)||{}).closingAt},
+      onward:onwardBest(named, leave, after, ex).slice(0,6),
+      alts:[], afterSpec:after};
+  }
+
+  /* otherwise pick one, scoring how good the night looks *from* it */
+  const pool=stopMatches(stops[0]).filter(d=>d.lat && !ex.has(d.n));
+  const near=pool.map(d=>({d, km:origin?dist(origin.pt,[d.lat,d.lng]):0}))
+                 .sort((a,b)=>a.km-b.km).slice(0, origin?26:26);
+  const scored=near.map(x=>{
+    const w = origin ? walkMins(origin.pt,[x.d.lat,x.d.lng]) : 0;
+    const arrive = addMin(start, Math.min(w, 25));
+    const st = openState(x.d.n, arrive);
+    const leave = addMin(arrive, dwellFor(x.d.c));
+    const on = onwardFrom(x.d, leave, after, ex);
+    let c = x.km*3;
+    if(st && !st.open) c+=90; else if(!st) c+=6;
+    c -= parseFloat(x.d.rat||0)*2.5;
+    if(x.d.src==='mine') c-=6;
+    c -= Math.min(on.length,4)*5;                       // rewarded for what is around it
+    if(on[0]) c -= Math.max(0, 8-on[0].w)*0.6;          // and for how close the first one is
+    return {d:x.d, w, arrive, open:st?st.open:null, closingAt:st?st.closingAt:null,
+            onward:on, cost:c};
+  }).sort((a,b)=>a.cost-b.cost);
+
+  const best=scored[0];
+  if(!best) return {type:'anchor', plan, origin, start, excluded:ex,
+                    anchor:null, onward:[], alts:[], afterSpec:after};
+  return {type:'anchor', plan, origin, start, excluded:ex, theirs:false,
+    anchor:{d:best.d, arrive:best.arrive, w:best.w, open:best.open, closingAt:best.closingAt},
+    onward:(best.onward.length>=3 ? best.onward
+            : onwardBest(best.d, addMin(best.arrive, dwellFor(best.d.c)), after, ex)).slice(0,6),
+    /* they named a place and we could not put it on the map. Say so, rather
+       than quietly answering a question they did not ask. */
+    missed:(plan.venues&&plan.venues.length)?plan.venues[0]:null,
+    alts:scored.slice(1,6).map(x=>x.d.n), afterSpec:after};
+}
+
+/* "show me another": ban the one on screen and choose again */
+function anotherAnchor(){
+  const r=S.plan;
+  if(!r || r.type!=='anchor' || !r.anchor) return;
+  r.excluded.add(r.anchor.d.n);
+  let next=buildPlan(r.plan, r.origin, r.start, r.excluded);
+  if(!next.anchor){                                     // ran out, start the list again
+    r.excluded=new Set();
+    next=buildPlan(r.plan, r.origin, r.start, r.excluded);
+    toast('That was the last one, back to the top');
+  }
+  next.excluded=r.excluded;
+  S.plan=next; render(); drawRoute(next); applyHours(next);
+  const pts=[[next.anchor.d.lat,next.anchor.d.lng]].concat(next.onward.map(o=>[o.d.lat,o.d.lng]));
+  if(pts.length) map.flyToBounds(L.latLngBounds(pts),{padding:[55,55],maxZoom:16,duration:.7});
+}
+
+let routeLine=null;
+function drawRoute(r){
+  if(routeLine){ map.removeLayer(routeLine); routeLine=null; }
+  if(!r || r.type!=='anchor' || !r.anchor || !r.onward.length) return;
+  const a=[r.anchor.d.lat, r.anchor.d.lng];
+  routeLine=L.layerGroup(r.onward.slice(0,4).map(o=>
+    L.polyline([a,[o.d.lat,o.d.lng]],{color:css('--accent')||'#2563eb', weight:2,
+      opacity:.5, dashArray:'2 6', lineCap:'round'}))).addTo(map);
+}
+
 function runPlan(plan){
   const origin=planOrigin(plan);
   let rad=plan.radiusKm || (plan.between ? 4 : origin ? 2 : 0);
@@ -1809,23 +2014,11 @@ function runPlan(plan){
   };
   const stops=(plan.stops&&plan.stops.length?plan.stops:[{kind:'any'}]);
   let result;
-  if(stops.length>=2){
-    const A=rank(stopMatches(stops[0])).slice(0,30);
-    const Ball=stopMatches(stops[1]);
-    const pairs=[];
-    A.forEach(a=>{
-      let best=null;
-      Ball.forEach(b=>{
-        if(b.n===a.d.n) return;
-        const w=dist([a.d.lat,a.d.lng],[b.lat,b.lng]);
-        if(w>1.3) return;
-        const sc=w - (parseFloat(b.rat||0)*0.05) + (a.km||0)*0.35;
-        if(!best||sc<best.sc) best={b, w, sc};
-      });
-      if(best) pairs.push({a:a.d, b:best.b, walk:best.w, km:a.km, sc:best.sc});
-    });
-    pairs.sort((x,y)=>x.sc-y.sc);
-    result={type:'pairs', pairs:pairs.slice(0,10), origin, plan, widened, rad};
+  const named = !!(origin && origin.venue) || !!plan._gv;
+  if(stops.length>=2 || named || plan.wantsAfter){
+    S.planWhen=whenFrom(plan);
+    result=buildPlan(plan, origin, startTimeFor(plan));
+    result.widened=widened; result.rad=rad;
   } else {
     result={type:'rows', rows:rank(stopMatches(stops[0])).slice(0,40).map(x=>x.d), origin, plan, widened, rad};
   }
@@ -1834,8 +2027,10 @@ function runPlan(plan){
   if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
   render();
   applyHours(result);
-  const pts=(result.type==='pairs'
-      ? result.pairs.flatMap(p=>[[p.a.lat,p.a.lng],[p.b.lat,p.b.lng]])
+  drawRoute(result.type==='anchor'?result:null);
+  const pts=(result.type==='anchor'
+      ? (result.anchor?[[result.anchor.d.lat,result.anchor.d.lng]]:[])
+          .concat(result.onward.map(o=>[o.d.lat,o.d.lng]))
       : result.rows.map(d=>[d.lat,d.lng])).slice(0,16);
   if(origin) pts.push(origin.pt);
   if(pts.length) map.flyToBounds(L.latLngBounds(pts),{padding:[45,45],maxZoom:15,duration:.8});
@@ -1844,23 +2039,32 @@ function runPlan(plan){
 /* fetch hours for the shortlist, then float the open ones up */
 async function applyHours(result){
   if(!result) return;
-  const rows = result.type==='pairs'
-    ? result.pairs.flatMap(p=>[p.a,p.b])
-    : (result.rows||[]);
+  let rows;
+  if(result.type==='anchor'){
+    /* the place itself, what follows it, and a few alternates, so the ranking
+       and the "another" button both know what is actually open */
+    const seen=new Set(); rows=[];
+    const take=d=>{ if(d && d.lat && !seen.has(d.n)){ seen.add(d.n); rows.push(d); } };
+    if(result.anchor) take(result.anchor.d);
+    result.onward.slice(0,5).forEach(o=>take(o.d));
+    (result.alts||[]).slice(0,4).forEach(n=>{ const d=DATA.find(x=>x.n===n); if(d) take(d); });
+  } else rows=(result.rows||[]);
   if(!rows.length) return;
   result.hoursPending=true; render();
-  await hydrateHours(rows, result.type==='pairs'?10:10);
+  await hydrateHours(rows, result.type==='anchor'?12:10);
   result.hoursPending=false;
+
+  if(result.type==='anchor'){
+    // choose again now that opening times are known
+    const fresh=buildPlan(result.plan, result.origin, result.start, result.excluded);
+    if(fresh.anchor){ result.anchor=fresh.anchor; result.onward=fresh.onward; result.alts=fresh.alts; }
+    render(); drawRoute(result);
+    return;
+  }
   const when=S.planWhen||new Date();
   const score=d=>{ const st=openState(d.n, when); return st===null?1:(st.open?0:2); };
-  if(result.type==='rows'){
-    result.rows=result.rows.slice().sort((a,b)=>score(a)-score(b));
-  } else {
-    result.pairs=result.pairs.slice().sort((x,y)=>
-      (score(x.a)+score(x.b))-(score(y.a)+score(y.b)));
-  }
-  const shut=rows.filter(d=>{const st=openState(d.n,when); return st&&!st.open;}).length;
-  result.shutCount=shut;
+  result.rows=result.rows.slice().sort((a,b)=>score(a)-score(b));
+  result.shutCount=rows.filter(d=>{const st=openState(d.n,when); return st&&!st.open;}).length;
   render();
 }
 
@@ -1925,6 +2129,13 @@ function sugCard(p){
     '<div class="tagrow"><span class="tag">'+(p.via==='google'?'on Google':p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
     (p.rating?'<span class="tag">'+p.rating+'★'+(p.ratingCount?' ('+p.ratingCount+')':'')+'</span>':'')+
     (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
+  const saved=inBank(p.name);
+  const b=document.createElement('button');
+  b.className='savebtn'+(saved?' done':'');
+  b.textContent=saved?'In your bank':'Save';
+  b.disabled=saved;
+  b.onclick=e=>{ e.stopPropagation(); savePlace(p,b); };
+  el.appendChild(b);
   el.onclick=()=>openSuggestion(p);
   return el;
 }
@@ -1948,8 +2159,13 @@ function openSuggestion(p){
   : 'It has a real registered address, but nobody you trust has vouched for it.')+'</p>';
   dbody.innerHTML=h; dbody.scrollTop=0;
   const qy=encodeURIComponent(p.name+', '+(p.address||p.area||'London'));
+  const already=inBank(p.name);
   dactions.innerHTML='<a class="btn pri" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>'+
-    '<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(p.name+' london')+'">Instagram</a>';
+    '<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(p.name+' london')+'">Instagram</a>'+
+    '<button class="btn" id="dsave"'+(already?' disabled':'')+'>'+
+      (already?'In your bank':'Save to my bank')+'</button>';
+  const sb=document.getElementById('dsave');
+  if(sb && !already) sb.onclick=()=>savePlace(p, sb);
   detail.classList.add('open'); document.body.classList.add('detail-open');
   // was reading an undefined "d" here, which threw and killed everything below it
   if(p.lat) fetchLive({n:p.name, lat:p.lat, lng:p.lng, gid:p.id||p.placeId||null})
@@ -2144,6 +2360,89 @@ function renderSuggestions(){
   listEl.appendChild(f);
 }
 
+/* the plan itself: times, walks, and a swap on every stop */
+const STOPWORD={eat:'Food', drink:'Drinks', coffee:'Coffee', culture:'Something to see',
+                outdoors:'Outside', shop:'A wander', any:'Somewhere'};
+
+/* One place, and what it opens up. Not an itinerary you have to obey. */
+function planView(r){
+  const wrap=document.createElement('div');
+  wrap.className='route';
+  const a=r.anchor;
+  if(!a) return wrap;
+
+  const day=r.start.toLocaleDateString('en-GB',{weekday:'long'});
+  wrap.innerHTML='<div class="rhead"><b>'+day+' from '+fmtT(r.start)+'</b>'+
+    (r.hoursPending?'<span> · checking opening times…</span>':'')+'</div>'+
+    (r.missed?'<div class="missed">I could not find “'+esc(r.missed)+
+      '”, so this is my own suggestion instead.</div>':'');
+
+  const st=openState(a.d.n, a.arrive);
+  const openBit = st
+    ? (st.open ? '<span class="now">'+(st.closingAt?('open till '+hhmm(st.closingAt)):'open then')+'</span>'
+               : '<span class="shut">shut at '+fmtT(a.arrive)+'</span>')
+    : '';
+  const meta=[a.d.hood||a.d.area||a.d.reg, a.d.cui||a.d.t,
+              a.d.rat?('★ '+a.d.rat):null, a.d.band].filter(Boolean).join(' · ');
+
+  const el=document.createElement('div');
+  el.className='rleg'+(a.d.src==='mine'?' mine':'');
+  el.innerHTML=
+    '<div class="rtime"><b>'+fmtT(a.arrive)+'</b><span>'+
+      (r.theirs?'where you are':'start here')+'</span></div>'+
+    '<div class="rbody">'+
+      '<div class="pin" style="background:'+css('--'+a.d.c)+'">'+svg(a.d.c)+'</div>'+
+      '<div class="rtext"><h3>'+esc(a.d.n)+'</h3>'+
+        '<p class="meta">'+esc(meta)+'</p>'+
+        '<div class="tagrow">'+openBit+
+          (a.d.src==='mine'?'<span class="tag mine">yours</span>':'')+
+          (a.d.src==='google'?'<span class="tag">on Google</span>':'')+
+        '</div></div></div>';
+  el.querySelector('.rbody').onclick=()=> a.d.src==='google' && r.plan._gv
+    ? openSuggestion(r.plan._gv) : openDetail(a.d,true);
+  if(!r.theirs){
+    const sw=document.createElement('button');
+    sw.className='rswap'; sw.type='button'; sw.textContent='another';
+    sw.onclick=e=>{ e.stopPropagation(); anotherAnchor(); };
+    el.appendChild(sw);
+  }
+  wrap.appendChild(el);
+
+  /* the point of the whole thing: what you can do afterwards */
+  const on=r.onward||[];
+  const head=document.createElement('div');
+  head.className='afterhead';
+  head.innerHTML = on.length
+    ? (r.theirs ? 'From there, you could go on to'
+                : 'Good here because after, you have')
+    : 'Nothing in your bank is within a walk of here afterwards';
+  wrap.appendChild(head);
+
+  if(!on.length){
+    const n=document.createElement('div');
+    n.className='secnote';
+    n.textContent='Try “another” for somewhere with more around it.';
+    wrap.appendChild(n);
+    return wrap;
+  }
+  on.forEach(o=>{
+    const ost=openState(o.d.n, o.arrive);
+    const row=document.createElement('div');
+    row.className='after'+(o.d.src==='mine'?' mine':'');
+    row.innerHTML=
+      '<div class="pin sm" style="background:'+css('--'+o.d.c)+'">'+svg(o.d.c)+'</div>'+
+      '<div class="atext"><h4>'+esc(o.d.n)+'</h4>'+
+        '<p class="meta">'+esc([o.w+' min walk', o.d.cui||o.d.t, o.d.band,
+            o.d.rat?('★ '+o.d.rat):null].filter(Boolean).join(' · '))+'</p></div>'+
+      (ost && ost.open
+        ? '<span class="now">'+(ost.closingAt?('till '+hhmm(ost.closingAt)):'open')+'</span>'
+        : '');
+    row.onclick=()=>openDetail(o.d,true);
+    wrap.appendChild(row);
+  });
+  return wrap;
+}
+
 function renderPlan(){
   const p=S.plan;
   listEl.innerHTML='';
@@ -2162,14 +2461,26 @@ function renderPlan(){
     listEl.prepend(f);
     return;
   }
-  const items = p.type==='pairs' ? p.pairs : p.rows;
-  countEl.textContent = items.length ? (items.length+(p.type==='pairs'?' pairings':' spots')) : 'nothing matched';
+  const items = p.type==='anchor' ? (p.anchor?[p.anchor]:[]) : p.rows;
+  countEl.textContent = p.type==='anchor'
+    ? (p.anchor ? (p.onward.length?'one place · '+p.onward.length+' after':'one place') : 'nothing yet')
+    : (items.length ? items.length+' spots' : 'nothing matched');
   cluster.clearLayers();
   const live=[];
   const push=d=>{ const m=markers.get(d.n); if(m) live.push(m); };
-  if(p.type==='pairs') p.pairs.forEach(x=>{push(x.a);push(x.b);}); else p.rows.forEach(push);
+  if(p.type==='anchor'){ if(p.anchor) push(p.anchor.d); p.onward.forEach(o=>push(o.d)); }
+  else p.rows.forEach(push);
   cluster.addLayers(live);
   listEl.appendChild(planBar(p));
+  if(p.type==='anchor'){
+    if(!p.anchor){
+      listEl.insertAdjacentHTML('beforeend',
+        '<div class="empty">Nothing in your bank fits that yet.<br>Try naming an area, or fewer conditions.</div>');
+    } else listEl.appendChild(planView(p));
+    renderSuggestions();
+    if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
+    return;
+  }
   if(S.anchorPlace){
     listEl.insertAdjacentHTML('beforeend','<div class="sechead">The place you named</div>');
     listEl.appendChild(sugCard(S.anchorPlace));
@@ -2179,8 +2490,7 @@ function renderPlan(){
       '<div class="empty">Nothing in the bank fits that yet.<br>Try widening it, or clear and browse.</div>');
   }
   const frag=document.createDocumentFragment();
-  if(p.type==='pairs') p.pairs.forEach(x=>frag.appendChild(pairCard(x)));
-  else p.rows.forEach(d=>frag.appendChild(card(d)));
+  p.rows.forEach(d=>frag.appendChild(card(d)));
   listEl.appendChild(frag);
   renderSuggestions();
   if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
@@ -2278,6 +2588,121 @@ function paintLive(name, live){
       live.phone.replace(/\s/g,'')+'">Call</a>');
 }
 
+
+/* ============ your own saved places, shared across your devices ============ */
+const PASSKEY='otp:v1:pass';
+const slugOf=n=>String(n||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+const inBank=n=>{ const k=slugOf(n); return DATA.some(d=>slugOf(d.n)===k); };
+
+function toast(msg){
+  const el=document.createElement('div'); el.className='toast'; el.textContent=msg;
+  document.body.appendChild(el);
+  setTimeout(()=>{ el.style.transition='opacity .4s'; el.style.opacity='0';
+    setTimeout(()=>el.remove(),450); }, 2200);
+}
+async function bankCall(payload){
+  try{
+    const r=await fetch('/api/bank',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)});
+    return await r.json();
+  }catch(e){ return {error:'offline'}; }
+}
+/* one small prompt, once per device, then remembered */
+function askPass(){
+  return new Promise(resolve=>{
+    const wrap=document.createElement('div'); wrap.className='passwrap';
+    wrap.innerHTML='<div class="passbox"><h4>Your passphrase</h4>'+
+      '<p>Your site is public, so adding to your bank needs the passphrase you set on Netlify. '+
+      'This device will remember it.</p>'+
+      '<input type="password" autocomplete="current-password" id="passin" placeholder="passphrase">'+
+      '<div class="row"><button class="btn" id="passno">Cancel</button>'+
+      '<button class="btn pri" id="passyes">Save</button></div></div>';
+    document.body.appendChild(wrap);
+    const input=wrap.querySelector('#passin');
+    const done=v=>{ wrap.remove(); resolve(v); };
+    wrap.querySelector('#passno').onclick=()=>done(null);
+    wrap.querySelector('#passyes').onclick=()=>done(input.value.trim()||null);
+    input.onkeydown=e=>{ if(e.key==='Enter') done(input.value.trim()||null);
+                         if(e.key==='Escape') done(null); };
+    wrap.onclick=e=>{ if(e.target===wrap) done(null); };
+    setTimeout(()=>input.focus(),50);
+  });
+}
+function addToBoard(d){
+  DATA.push(d);
+  if(d.lat){
+    PINNED.push(d);
+    const m=L.marker([d.lat,d.lng],{icon:L.divIcon({className:'lm',
+      html:'<div class="mk mine" data-c="'+d.c+'" style="background:'+css('--'+d.c)+'">'+svg(d.c)+'</div>',
+      iconSize:[26,26], iconAnchor:[13,26]}), title:d.n, riseOnHover:true});
+    m.on('click',()=>openDetail(d,false));
+    markers.set(d.n,m);
+  }
+}
+function refreshMineChip(){
+  const box=document.getElementById('srcchips');
+  if(!box || box.querySelector('[data-k="mine"]')) return;
+  if(!DATA.some(d=>d.src==='mine')) return;
+  const c=chip('Saved by you','mine','src');
+  c.setAttribute('data-k','mine');
+  box.appendChild(c);
+}
+/* on load, pull whatever this or another device has saved */
+async function loadSaved(){
+  const j=await bankCall({action:'list'});
+  if(!j || !j.places || !j.places.length) return;
+  let added=0;
+  j.places.forEach(p=>{ if(p && p.lat && !inBank(p.n)){ addToBoard(p); added++; } });
+  if(added){ refreshMineChip(); if(!S.plan) render(); }
+}
+/* p is a Google or model suggestion; turn it into a bank record and store it */
+async function savePlace(p, btn){
+  let pass=localStorage.getItem(PASSKEY);
+  if(!pass){ pass=await askPass(); if(!pass) return false; }
+  if(btn){ btn.disabled=true; btn.textContent='Saving…'; }
+  const place={
+    n:p.name||p.n, lat:p.lat, lng:p.lng, c:p.kind||p.c||'eat', t:p.type||p.t||null,
+    area:p.area||null, addr:p.address||p.addr||null, pc:p.postcode||p.pc||null,
+    rating:p.rating!=null?p.rating:null, note:p.why||'', id:p.id||p.placeId||null,
+  };
+  let j=await bankCall({action:'add', pass, place});
+  if(j && j.error==='bad_pass'){
+    localStorage.removeItem(PASSKEY);
+    const again=await askPass();
+    if(!again){ if(btn){btn.disabled=false; btn.textContent='Save to my bank';} return false; }
+    pass=again; j=await bankCall({action:'add', pass, place});
+  }
+  if(j && j.ok){
+    localStorage.setItem(PASSKEY, pass);
+    if(!inBank(j.saved.n)) addToBoard(j.saved);
+    refreshMineChip();
+    if(btn){ btn.className='savebtn done'; btn.textContent='In your bank'; btn.disabled=true; }
+    toast('“'+j.saved.n+'” added to your bank');
+    render();
+    return true;
+  }
+  if(btn){ btn.disabled=false; btn.textContent='Save to my bank'; }
+  toast(j && j.error==='no_pass_set'
+    ? 'Set OTP_PASS on Netlify first'
+    : j && j.error==='bad_pass' ? 'That passphrase did not match'
+    : 'Could not save just now');
+  return false;
+}
+async function unsavePlace(name){
+  let pass=localStorage.getItem(PASSKEY);
+  if(!pass){ pass=await askPass(); if(!pass) return; }
+  const j=await bankCall({action:'remove', pass, name});
+  if(j && j.ok){
+    localStorage.setItem(PASSKEY, pass);
+    const k=slugOf(name);
+    for(let i=DATA.length-1;i>=0;i--) if(slugOf(DATA[i].n)===k && DATA[i].src==='mine') DATA.splice(i,1);
+    for(let i=PINNED.length-1;i>=0;i--) if(slugOf(PINNED[i].n)===k && PINNED[i].src==='mine') PINNED.splice(i,1);
+    markers.delete(name);
+    const x=document.getElementById('dclose'); if(x) x.click();
+    toast('Removed from your bank');
+    render();
+  } else toast('Could not remove that just now');
+}
 
 /* ============ opening hours: cached, and used to rank ============ */
 const LS='otp:v1:';
@@ -2484,7 +2909,10 @@ function openDetail(d,fly){
   }
   if(d.m[0] && d.m[0].u)
     acts.push('<a class="btn" target="_blank" rel="noopener" href="'+d.m[0].u+'">Read the post</a>');
+  if(d.src==='mine') acts.push('<button class="btn" id="dunsave">Remove from bank</button>');
   dactions.innerHTML=acts.join('');
+  const ub=document.getElementById('dunsave');
+  if(ub) ub.onclick=()=>unsavePlace(d.n);
 
   detail.classList.add('open'); document.body.classList.add('detail-open');
   if(d.lat) fetchLive(d).then(live=>paintLive(d.n, live));
@@ -2729,6 +3157,7 @@ render();
 drawPrompts();
 homeView();
 locate(true);
+loadSaved();          // whatever you saved on any device
 </script>
 </body>
 </html>

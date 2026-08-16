@@ -1,0 +1,9 @@
+{
+  "name": "oh-the-places-you-will-go",
+  "private": true,
+  "version": "1.0.0",
+  "description": "London places, on a map, with a planner.",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}
