@@ -119,7 +119,8 @@ exports.handler = async (event) => {
     const d = await getDetails(key, id);
     if (d.error) return { statusCode: 200, headers, body: JSON.stringify(d) };
 
-    const photoName = (d.photos && d.photos[0] && d.photos[0].name) || null;
+    const photoRefs = (d.photos || []).slice(0, 6).map(p => p.name).filter(Boolean);
+    const photoName = photoRefs[0] || null;
     return { statusCode: 200, headers, body: JSON.stringify({
       id,
       name: d.displayName && d.displayName.text,
@@ -132,8 +133,9 @@ exports.handler = async (event) => {
       website: d.websiteUri || null,
       phone: d.nationalPhoneNumber || null,
       status: d.businessStatus || null,
-      // the client asks for the image through our own /api/photo so the key never ships
+      // the client asks for images through our own /api/photo so the key never ships
       photo: photoName ? '/api/photo?name=' + encodeURIComponent(photoName) + '&w=800' : null,
+      photos: photoRefs.map(n2 => '/api/photo?name=' + encodeURIComponent(n2) + '&w=800'),
       matchedKm: matched && matched.km != null ? Math.round(matched.km * 1000) : null,
     }) };
   } catch (e) {
