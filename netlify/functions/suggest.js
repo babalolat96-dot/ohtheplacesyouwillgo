@@ -72,8 +72,11 @@ Rules:
 - Never repeat a venue that is already in the user's list, which is given to you.
 - If the request mentions a specific venue, places physically near it are ideal,
   including anything in the same building.
-- Give the street whenever you know it. It is what allows a place to be confirmed.
-  Do not invent one; an empty street is better than a wrong one.`;
+- Give the street whenever you know it, including the number. It is what allows a
+  place to be confirmed, and small or new bars are often in no public register.
+  Do not invent one; an empty street is better than a wrong one.
+- A bar inside, above or below another venue is a good answer. Give the building's
+  address in street, and say the relationship in why.`;
 
 const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const tokens = s => (s || '').toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2);
@@ -121,22 +124,58 @@ async function fsaCheck(name, area) {
   return null;
 }
 
-// fallback: the model gave a street address, so geocode that instead
-async function geoCheck(name, street, area) {
-  const q = [name, street, area, 'London, UK'].filter(Boolean).join(', ');
+// fallback: look the name up on the map, trying progressively looser forms
+const GENERIC = /\b(townhouse|town house|restaurant|restaurants|bar|bars|cafe|caf\u00e9|kitchen|house|club|rooms|room|lounge|tavern|the|london)\b/gi;
+
+async function nom(q) {
   try {
     const r = await fetch('https://nominatim.openstreetmap.org/search?' + new URLSearchParams({
-      q, format: 'json', limit: '1', countrycodes: 'gb',
-      viewbox: '-0.55,51.72,0.35,51.25', bounded: '1',
+      q, format: 'json', limit: '3', viewbox: '-0.55,51.72,0.35,51.25', bounded: '1',
     }), { headers: { 'User-Agent': 'oh-the-places/1.0 (personal)' } });
-    if (!r.ok) return null;
-    const d = await r.json();
-    if (!d.length) return null;
-    const lat = parseFloat(d[0].lat), lng = parseFloat(d[0].lon);
-    if (!(lat > 51.2 && lat < 51.8 && lng > -0.6 && lng < 0.4)) return null;
-    return { name, address: street || d[0].display_name.split(',').slice(0, 3).join(','),
-             postcode: null, lat, lng, via: 'map' };
-  } catch (e) { return null; }
+    if (!r.ok) return [];
+    return await r.json();
+  } catch (e) { return []; }
+}
+
+async function geoCheck(name, street, area) {
+  const short = (name || '').replace(GENERIC, ' ').replace(/\s+/g, ' ').trim();
+  const tries = [];
+  if (street) tries.push({ q: name + ', ' + street, strict: false });
+  if (street) tries.push({ q: street + ', London', strict: false });
+  if (area) tries.push({ q: name + ', ' + area, strict: true });
+  tries.push({ q: name, strict: true });
+  if (short && short.length > 2 && short.toLowerCase() !== (name || '').toLowerCase()) {
+    if (area) tries.push({ q: short + ', ' + area, strict: true });
+    tries.push({ q: short, strict: true });
+  }
+  const want = tokens(name).concat(tokens(short));
+  const seen = new Set();
+  for (const t of tries) {
+    if (!t.q || seen.has(t.q.toLowerCase())) continue;
+    seen.add(t.q.toLowerCase());
+    for (const h of await nom(t.q)) {
+      const lat = parseFloat(h.lat), lng = parseFloat(h.lon);
+      if (!(lat > 51.2 && lat < 51.8 && lng > -0.6 && lng < 0.4)) continue;
+      const head = (h.display_name || '').split(',')[0];
+      if (t.strict) {
+        // a name-only lookup must land on an actual venue, not a building or a street
+        const POI = ['amenity', 'shop', 'tourism', 'leisure', 'craft', 'office'];
+        if (!POI.includes(h.class)) continue;
+        if (!nameMatches(head, name) && !nameMatches(head, short)) continue;
+        return {
+          name: head || name,
+          address: (h.display_name || '').split(',').slice(0, 3).join(',').trim(),
+          postcode: null, lat, lng, via: 'map',
+        };
+      }
+      // matched on the street the model gave: the address is real, the name is its claim
+      return {
+        name, address: (h.display_name || '').split(',').slice(0, 3).join(',').trim(),
+        postcode: null, lat, lng, via: 'address',
+      };
+    }
+  }
+  return null;
 }
 
 exports.handler = async (event) => {
@@ -185,8 +224,9 @@ exports.handler = async (event) => {
       };
     }));
     const places = checked.filter(Boolean);
-    return { statusCode: 200, headers, body: JSON.stringify({
-      places, model, proposed: raw.length, verified: places.length }) };
+    const out = { places, model, proposed: raw.length, verified: places.length };
+    if (body.debug) out.raw = raw;
+    return { statusCode: 200, headers, body: JSON.stringify(out) };
   } catch (e) {
     return { statusCode: 200, headers, body: JSON.stringify({ places: [], error: 'exception', detail: String(e) }) };
   }

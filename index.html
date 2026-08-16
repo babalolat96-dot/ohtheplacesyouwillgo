@@ -895,6 +895,23 @@ body.detail-open .mobtab{display:none}
 .mk.sug svg{fill:var(--ink-3)}
 .loadingrow{padding:12px 16px; font-size:12.5px; color:var(--ink-3)}
 
+.gphoto{width:100%; aspect-ratio:16/10; object-fit:cover; border-radius:12px;
+  display:block; margin:0 0 12px; background:var(--surface-2)}
+.live{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 12px}
+.openbadge{font-size:12px; padding:3px 9px; border-radius:999px; font-weight:600}
+.openbadge.yes{background:#0ca30c; color:#fff}
+.openbadge.no{background:var(--surface-2); color:var(--ink-2); border:1px solid var(--line)}
+.hoursbox{margin:0 0 14px; font-size:12.5px; color:var(--ink-2)}
+.hoursbox summary{cursor:pointer; color:var(--ink-3); font-size:12px; list-style:none}
+.hoursbox summary::-webkit-details-marker{display:none}
+.hoursbox ul{margin:8px 0 0; padding:0; list-style:none}
+.hoursbox li{display:flex; justify-content:space-between; gap:12px; padding:2px 0}
+.hoursbox li.today{color:var(--ink); font-weight:600}
+.livewait{font-size:12px; color:var(--ink-3); margin:0 0 12px}
+.card .now{font-size:10.5px; padding:2px 7px; border-radius:999px; background:#0ca30c; color:#fff}
+.card .shut{font-size:10.5px; padding:2px 7px; border-radius:999px;
+  background:var(--surface-2); color:var(--ink-3); border:1px solid var(--line)}
+
 /* ---------- results ---------- */
 .bar{padding:9px 16px; flex:0 0 auto; display:flex; align-items:center; gap:10px;
   border-bottom:1px solid var(--line); font-size:12.5px; color:var(--ink-3)}
@@ -1822,6 +1839,7 @@ function openSuggestion(p){
   dactions.innerHTML='<a class="btn pri" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>'+
     '<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(p.name+' london')+'">Instagram</a>';
   detail.classList.add('open'); document.body.classList.add('detail-open');
+  if(d.lat) fetchLive(d).then(live=>paintLive(d.n, live));
   if(window.innerWidth<=860){ setTimeout(()=>{ map.invalidateSize();
     map.setView([p.lat,p.lng], 16, {animate:true}); }, 120); }
 }
@@ -2049,6 +2067,64 @@ function card(d){
 const fmtDist=k=>k<1?Math.round(k*1000)+' m':k.toFixed(1)+' km';
 function esc(s){return (s==null?'':String(s)).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
+/* ---------------- live detail from Google, only when a card is opened ---------------- */
+const liveCache=new Map();
+const DAYS=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+async function fetchLive(d){
+  const key=d.n;
+  if(liveCache.has(key)) return liveCache.get(key);
+  const pr=(async()=>{
+    try{
+      const r=await fetch('/api/place',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name:d.n, lat:d.lat, lng:d.lng, id:d.gid||null})});
+      const j=await r.json();
+      return (j && !j.error) ? j : {error:(j&&j.error)||'failed'};
+    }catch(e){ return {error:'offline'}; }
+  })();
+  liveCache.set(key,pr);
+  return pr;
+}
+function liveHtml(live){
+  if(!live || live.error) return '';
+  let h='';
+  if(live.photo) h+='<img class="gphoto" src="'+live.photo+'" alt="" loading="lazy" '+
+    'onerror="this.remove()">';
+  const bits=[];
+  const on=live.hours && live.hours.openNow;
+  if(on===true) bits.push('<span class="openbadge yes">Open now</span>');
+  if(on===false) bits.push('<span class="openbadge no">Closed now</span>');
+  if(live.rating) bits.push('<span class="tag">★ '+esc(live.rating)+
+    (live.ratingCount?' ('+esc(live.ratingCount)+')':'')+'</span>');
+  if(live.status && live.status!=='OPERATIONAL')
+    bits.push('<span class="tag">'+esc(String(live.status).replace(/_/g,' ').toLowerCase())+'</span>');
+  if(bits.length) h+='<div class="live">'+bits.join('')+'</div>';
+  if(live.hours && live.hours.week && live.hours.week.length){
+    const today=DAYS[new Date().getDay()];
+    h+='<details class="hoursbox"><summary>Opening hours</summary><ul>'+
+      live.hours.week.map(line=>{
+        const isToday=line.toLowerCase().startsWith(today.toLowerCase());
+        const i=line.indexOf(':');
+        const day=i>0?line.slice(0,i):line, rest=i>0?line.slice(i+1).trim():'';
+        return '<li class="'+(isToday?'today':'')+'"><span>'+esc(day)+'</span><span>'+esc(rest)+'</span></li>';
+      }).join('')+'</ul></details>';
+  }
+  return h;
+}
+function paintLive(name, live){
+  const slot=document.getElementById('liveslot');
+  if(!slot || dname.textContent!==name) return;
+  const html=liveHtml(live);
+  slot.innerHTML = html || '';
+  const acts=document.getElementById('dactions');
+  if(live && live.website && acts && !acts.querySelector('.wsite'))
+    acts.insertAdjacentHTML('beforeend','<a class="btn wsite" target="_blank" rel="noopener" href="'+
+      live.website+'">Website</a>');
+  if(live && live.phone && acts && !acts.querySelector('.wcall'))
+    acts.insertAdjacentHTML('beforeend','<a class="btn wcall" href="tel:'+
+      live.phone.replace(/\s/g,'')+'">Call</a>');
+}
+
 /* ---------------- detail ---------------- */
 const detail=document.getElementById('detail'), dname=document.getElementById('dname'),
       dbody=document.getElementById('dbody'), dactions=document.getElementById('dactions');
@@ -2067,7 +2143,7 @@ function openDetail(d,fly){
   if(d.reg && d.reg!==place) bits.push('<span class="tag">'+esc(d.reg)+'</span>');
   d.tags.forEach(t=>{const f=FILTERS.find(f=>f[0]===t); if(f) bits.push('<span class="tag">'+f[1]+'</span>');});
 
-  let h='<div class="dmeta">'+bits.join('')+'</div>';
+  let h='<div class="dmeta">'+bits.join('')+'</div><div id="liveslot"><p class="livewait">Checking hours…</p></div>';
   d.m.forEach(m=>{
     if(!m.b) return;
     const cite = m.u ? '<a href="'+m.u+'" target="_blank" rel="noopener">'+esc(m.t)+'</a>' : esc(m.t);
@@ -2106,6 +2182,7 @@ function openDetail(d,fly){
   dactions.innerHTML=acts.join('');
 
   detail.classList.add('open'); document.body.classList.add('detail-open');
+  if(d.lat) fetchLive(d).then(live=>paintLive(d.n, live));
   if(window.innerWidth<=860) setTimeout(()=>map.invalidateSize(), 80);
   document.querySelectorAll('.mk.sel').forEach(e=>e.classList.remove('sel'));
   const m=markers.get(d.n);
