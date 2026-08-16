@@ -1205,7 +1205,7 @@ if(window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').match
 }
 
 /* ---------------- state ---------------- */
-const S = {plan:null, sug:null, planWhen:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
+const S = {plan:null, sug:null, anchorPlace:null, planWhen:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
            bands:new Set(), cuis:new Set(), srcs:new Set(),
            matchAll:false, me:null, meLabel:'', radius:0, sel:null};
 const BANDS=[['£','£ under ~15'],['££','££ 15-35'],['£££','£££ 35-70'],['££££','££££ 70+'],['Free','Free']];
@@ -1710,14 +1710,36 @@ function findVenue(name){
   if(t.length<3) return null;
   const norm=x=>x.toLowerCase().replace(/[^a-z0-9 ]/g,'');
   const nt=norm(t);
+  /* an area or station name is a place, not a venue. Without this, "Soho"
+     anchored the whole search on "Soho Comedy Factory". */
+  if(typeof GAZ!=='undefined' && GAZ.some(g=>g.name.toLowerCase()===t)) return null;
   let hit=DATA.find(d=>norm(d.n)===nt);
   if(!hit) hit=DATA.find(d=>norm(d.n).startsWith(nt+' '));
-  if(!hit) hit=DATA.find(d=>norm(d.n).includes(nt));
+  /* a loose contains match on a short word is how "Soho" became
+     "Soho Comedy Factory". Only let long, distinctive names match that way. */
+  if(!hit && nt.length>=6) hit=DATA.find(d=>new RegExp('\\b'+nt.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b').test(norm(d.n)));
   if(!hit){
     const words=nt.split(' ').filter(w=>w.length>3);
-    if(words.length) hit=DATA.find(d=>words.every(w=>norm(d.n).includes(w)));
+    if(words.length>=2) hit=DATA.find(d=>words.every(w=>norm(d.n).includes(w)));
   }
   return hit && hit.lat ? hit : null;
+}
+/* The model named a venue we do not hold. Ask Google who and where it is,
+   rather than quietly falling back to the area name and anchoring on
+   whatever in the bank happens to contain that word. */
+async function resolveVenues(plan){
+  const names=(plan.venues||[]).filter(Boolean).slice(0,2);
+  if(!names.length) return;
+  if(names.some(v=>findVenue(v))) return;
+  const area=(plan.locations||[])[0];
+  for(const v of names){
+    const got=await googleFind(area ? v+' '+area : v);
+    if(got && got.length){
+      plan._gv=got[0];
+      S.anchorPlace=got[0];
+      return;
+    }
+  }
 }
 function planOrigin(plan){
   const vnames=(plan.venues||[]).concat(plan.anchorIsVenue?(plan.locations||[]):[]);
@@ -1725,6 +1747,9 @@ function planOrigin(plan){
     const hit=findVenue(v);
     if(hit){ plan._anchor=hit.n; return {pt:[hit.lat,hit.lng], label:hit.n, venue:hit}; }
   }
+  // not in the bank, but Google placed it: that is still the place they named
+  if(plan._gv){ plan._anchor=plan._gv.name;
+    return {pt:[plan._gv.lat, plan._gv.lng], label:plan._gv.name, venue:null}; }
   const pts=(plan.locations||[]).map(n=>{
     const g=GAZ.find(x=>x.name.toLowerCase()===String(n).toLowerCase()) || gazSearch(String(n))[0];
     return g ? [g.lat,g.lng] : null;
@@ -1839,7 +1864,7 @@ async function applyHours(result){
   render();
 }
 
-function clearPlan(){ S.plan=null; S.sug=null; drawSugMarkers([]); render(); drawPrompts(); }
+function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); render(); drawPrompts(); }
 
 /* ---- second tier: places the model knows, verified before they appear ---- */
 let sugLayer=null;
@@ -1980,6 +2005,7 @@ async function lookup(name){
 async function ask(text){
   closeDrop();
   q.value=''; S.q=''; sw.classList.remove('has'); sw.classList.remove('ask');
+  S.anchorPlace=null;
   const local=parseLocal(text);
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
@@ -1989,7 +2015,11 @@ async function ask(text){
     const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({q:text})});
     const d=await r.json();
-    if(d && d.plan){ d.plan.asked=text; d.plan.via='understood'; runPlan(d.plan); }
+    if(d && d.plan){
+      d.plan.asked=text; d.plan.via='understood';
+      await resolveVenues(d.plan);          // find a named venue we do not hold
+      runPlan(d.plan);
+    }
     else if(!local){ S.plan={type:'failed', asked:text,
       why:(d&&d.error==='no_key')?'The language model is not connected yet.':'I could not read that one.'};
       render(); }
@@ -2140,6 +2170,10 @@ function renderPlan(){
   if(p.type==='pairs') p.pairs.forEach(x=>{push(x.a);push(x.b);}); else p.rows.forEach(push);
   cluster.addLayers(live);
   listEl.appendChild(planBar(p));
+  if(S.anchorPlace){
+    listEl.insertAdjacentHTML('beforeend','<div class="sechead">The place you named</div>');
+    listEl.appendChild(sugCard(S.anchorPlace));
+  }
   if(!items.length){
     listEl.insertAdjacentHTML('beforeend',
       '<div class="empty">Nothing in the bank fits that yet.<br>Try widening it, or clear and browse.</div>');
