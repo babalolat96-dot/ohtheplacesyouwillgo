@@ -1854,6 +1854,23 @@ function drawSugMarkers(list){
     return m;
   })).addTo(map);
 }
+/* a short phrase with no request words in it is a name, not a brief */
+const BRIEFWORDS=/\b(where|somewhere|find|need|want|looking|take|go|drinks?|dinner|lunch|brunch|food|eat|date|cheap|near|after|before|tonight|tomorrow|between|plan|good|best|nice|any|show)\b/i;
+function looksLikeName(t){
+  const s=String(t||'').trim();
+  const n=s.split(/\s+/).filter(Boolean).length;
+  return n>0 && n<=5 && !BRIEFWORDS.test(s);
+}
+async function googleFind(text){
+  try{
+    const body={q:String(text).trim()};
+    if(S.me){ body.lat=S.me[0]; body.lng=S.me[1]; }
+    const r=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    const d=await r.json();
+    return (d && d.places) ? d.places.slice(0,4) : [];
+  }catch(e){ return []; }
+}
 async function fetchSuggestions(text, known){
   S.sug={loading:true, places:[]};
   renderPlan();
@@ -1861,8 +1878,15 @@ async function fetchSuggestions(text, known){
     const r=await fetch('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({q:text, known})});
     const d=await r.json();
-    S.sug={loading:false, places:(d.places||[]), proposed:d.proposed, verified:d.verified};
-  }catch(e){ S.sug={loading:false, places:[], failed:true}; }
+    let places=(d.places||[]);
+    /* the model came back empty. If this reads like a venue name, ask Google
+       straight out, rather than telling them nothing exists. */
+    if(!places.length && looksLikeName(text)) places=await googleFind(text);
+    S.sug={loading:false, places, proposed:d.proposed, verified:d.verified};
+  }catch(e){
+    const places=looksLikeName(text)?await googleFind(text):[];
+    S.sug={loading:false, places, failed:!places.length};
+  }
   drawSugMarkers(S.sug.places);
   renderPlan();
 }
@@ -1873,7 +1897,8 @@ function sugCard(p){
     '<div style="min-width:0;flex:1"><h3>'+esc(p.name)+'</h3>'+
     '<p class="meta">'+esc([p.area, p.postcode].filter(Boolean).join(' · '))+'</p>'+
     '<p class="snip">'+esc(p.why||'')+'</p>'+
-    '<div class="tagrow"><span class="tag">'+(p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
+    '<div class="tagrow"><span class="tag">'+(p.via==='google'?'on Google':p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
+    (p.rating?'<span class="tag">'+p.rating+'★'+(p.ratingCount?' ('+p.ratingCount+')':'')+'</span>':'')+
     (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
   el.onclick=()=>openSuggestion(p);
   return el;
@@ -1883,10 +1908,17 @@ function openSuggestion(p){
   let h='<div class="dmeta"><span class="tag">not in your bank</span>'+
     '<span class="tag">'+esc(CATS[p.kind]?CATS[p.kind].label:'Place')+'</span>'+
     (p.area?'<span class="tag">'+esc(p.area)+'</span>':'')+'</div>';
-  h+='<blockquote class="quote"><p>'+esc(p.why||'')+'</p><cite>suggested by the model · '+(p.via==='register'?'address confirmed in the UK food hygiene register':p.via==='map'?'found in OpenStreetMap':'the street address exists, the name is the model\'s word')+'</cite></blockquote>';
+  const cite = p.via==='google' ? 'found on Google'+(p.type?' · listed as '+esc(String(p.type).replace(/_/g,' ')):'')
+    : 'suggested by the model · '+(p.via==='register'?'address confirmed in the UK food hygiene register'
+      :p.via==='map'?'found in OpenStreetMap':'the street address exists, the name is the model\'s word');
+  if(p.why || p.via!=='google')
+    h+='<blockquote class="quote"><p>'+esc(p.why||'')+'</p><cite>'+cite+'</cite></blockquote>';
+  else h+='<p class="note">'+cite+'</p>';
   if(p.address) h+='<p class="kv"><b>Address:</b> '+esc(p.address)+(p.postcode?', '+esc(p.postcode):'')+'</p>';
   if(S.me) h+='<p class="kv"><b>Distance:</b> '+fmtDist(dist(S.me,[p.lat,p.lng]))+' away</p>';
-  h+='<p class="note">Not from your bank. '+(p.via==='address'
+  h+='<p class="note">Not from your bank. '+(p.via==='google'
+  ? 'This is Google\'s listing, not a recommendation from anyone you trust.'
+  : p.via==='address'
   ? 'The address is real but the venue name could not be independently confirmed, so treat it as a lead.'
   : 'It has a real registered address, but nobody you trust has vouched for it.')+'</p>';
   dbody.innerHTML=h; dbody.scrollTop=0;
@@ -1894,7 +1926,9 @@ function openSuggestion(p){
   dactions.innerHTML='<a class="btn pri" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>'+
     '<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(p.name+' london')+'">Instagram</a>';
   detail.classList.add('open'); document.body.classList.add('detail-open');
-  if(d.lat) fetchLive(d).then(live=>paintLive(d.n, live));
+  // was reading an undefined "d" here, which threw and killed everything below it
+  if(p.lat) fetchLive({n:p.name, lat:p.lat, lng:p.lng, gid:p.id||p.placeId||null})
+    .then(live=>paintLive(p.name, live));
   if(window.innerWidth<=860){ setTimeout(()=>{ map.invalidateSize();
     map.setView([p.lat,p.lng], 16, {animate:true}); }, 120); }
 }
@@ -1905,8 +1939,30 @@ async function lookup(name){
   S.plan={type:'rows', rows:[], origin:null, widened:false,
           plan:{reply:'Looking up '+name+'…', asked:name, via:'understood'}};
   render();
-  await fetchSuggestions('Where exactly is "'+name+'" in London? Return that venue itself.', []);
-  const first=(S.sug&&S.sug.places&&S.sug.places[0]);
+
+  /* Google first. It carries the small bars no register lists, and it knows
+     what kind of thing each result is, so a solicitors' office of the same
+     name can never answer for a bar. */
+  let first=null;
+  try{
+    const body={q:name};
+    if(S.me){ body.lat=S.me[0]; body.lng=S.me[1]; }
+    const r=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d && d.places && d.places.length){
+      const list=d.places.slice(0,4);
+      S.sug={loading:false, places:list, proposed:d.considered||list.length, verified:list.length};
+      drawSugMarkers(list);
+      first=list[0];
+    }
+  }catch(e){}
+
+  /* nothing on Google: fall back to the model, which is verified before it shows */
+  if(!first){
+    await fetchSuggestions('Where exactly is "'+name+'" in London? Return that venue itself.', []);
+    first=(S.sug&&S.sug.places&&S.sug.places[0]);
+  }
   if(first){
     S.plan.plan.reply=first.name+' is not in your bank, but here it is.';
     S.me=[first.lat,first.lng]; S.meLabel=first.name; radiusSel.disabled=false; drawMe();
@@ -2196,27 +2252,61 @@ function lsSet(k,v){ try{ localStorage.setItem(LS+k, JSON.stringify(v)); }catch(
 const keyOf=n=>'p:'+String(n).toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,40);
 const WEEK_MS=7*24*3600*1000;
 
-/* Google's own wording, e.g. "Monday: 12:00 – 15:45, 17:00 – 22:00" */
+/* Google's own wording. It is not one format: "12:00 – 15:45, 17:00 – 22:00",
+   "5:00 – 11:00 PM" (meridiem given once, at the end), "11:30 AM – 2:00 AM",
+   "12:00 AM – 2:00 AM", "Open 24 hours", "Closed". All of them have to land. */
+function tmin(h,m,mer){
+  h=+h; m=m?+m:0;
+  if(mer){ const p=mer[0].toLowerCase();
+    if(p==='p'&&h<12) h+=12;
+    if(p==='a'&&h===12) h=0; }
+  return h*60+m;
+}
+function parseSpan(part){
+  const toks=[];
+  const re=/(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m\.?/gi;   // times carrying am/pm
+  const bare=/(\d{1,2}):(\d{2})/g;                          // 24-hour times
+  let m;
+  while((m=re.exec(part))) toks.push({h:m[1], m:m[2], mer:m[3], at:m.index});
+  if(toks.length<2){
+    while((m=bare.exec(part))){
+      if(toks.some(t=>Math.abs(t.at-m.index)<3)) continue;
+      toks.push({h:m[1], m:m[2], mer:null, at:m.index});
+    }
+    toks.sort((x,y)=>x.at-y.at);
+  }
+  if(toks.length<2) return null;
+  const s=toks[0], e=toks[1];
+  let a, b=tmin(e.h,e.m,e.mer);
+  if(!s.mer && e.mer){
+    // "5:00 – 11:00 PM": the start inherits pm. "11:30 – 2:00 PM": it cannot.
+    a=tmin(s.h,s.m,e.mer);
+    if(a>=b){ const alt=tmin(s.h,s.m, e.mer[0].toLowerCase()==='p'?'a':'p'); if(alt<b) a=alt; }
+  } else {
+    a=tmin(s.h,s.m,s.mer);
+  }
+  if(a===b) return [0,1440];          // "00:00 – 00:00" is how all day is written
+  return [a,b];
+}
 function parseWeek(lines){
   const out={};
-  (lines||[]).forEach(line=>{
+  (lines||[]).forEach(raw=>{
+    const line=String(raw).replace(/[    　  ]/g,' ')
+                          .replace(/[‐-―−]/g,'-');
     const i=line.indexOf(':'); if(i<0) return;
     const day=line.slice(0,i).trim().toLowerCase();
     const rest=line.slice(i+1).trim();
     const di=DAYS.findIndex(d=>d.toLowerCase()===day);
     if(di<0) return;
     if(/closed/i.test(rest)){ out[di]=[]; return; }
-    if(/24\s*hours/i.test(rest)){ out[di]=[[0,1440]]; return; }
+    if(/24\s*hours|24\/7/i.test(rest)){ out[di]=[[0,1440]]; return; }
     const spans=[];
+    // commas only ever separate whole spans; times use a colon
     rest.split(',').forEach(part=>{
-      const m=part.match(/(\d{1,2}):(\d{2})\s*(?:am|pm)?\s*[–\-—to]+\s*(\d{1,2}):(\d{2})/i);
-      if(!m) return;
-      let a=(+m[1])*60+(+m[2]), b=(+m[3])*60+(+m[4]);
-      if(/pm/i.test(part.split(/[–\-—]/)[0]) && +m[1]<12) a+=720;
-      if(/pm/i.test(part.split(/[–\-—]/)[1]||'') && +m[3]<12) b+=720;
-      spans.push([a,b]);
+      const s=parseSpan(part);
+      if(s) spans.push(s);
     });
-    out[di]=spans;
+    if(spans.length) out[di]=spans;
   });
   return out;
 }
@@ -2254,6 +2344,16 @@ async function liveFor(d){
     if(j && !j.error){
       j.week = j.hours && j.hours.week ? parseWeek(j.hours.week) : null;
       j.ts=Date.now();
+      /* Google also tells us plainly whether it is open at this moment. If our
+         reading of the written week disagrees with that, our reading is wrong,
+         and no badge is far better than a confident wrong one. */
+      if(j.hours && typeof j.hours.openNow==='boolean'){
+        j.openNow=j.hours.openNow;
+        const mine = j.week ? openAt(j.week, new Date()) : null;
+        j.weekOk = (mine===null) ? false : (mine===j.hours.openNow);
+      } else {
+        j.weekOk = !!j.week;
+      }
       lsSet(k,j);
       return j;
     }
@@ -2278,15 +2378,22 @@ async function hydrateHours(rows, limit){
 }
 function knownHours(name){
   const h=lsGet(keyOf(name));
-  return (h && !h.none && h.week) ? h : null;
+  return (h && !h.none && (h.week || typeof h.openNow==='boolean')) ? h : null;
 }
 function openState(name, when){
   const h=knownHours(name);
   if(!h) return null;
-  const o=openAt(h.week, when||new Date());
+  const t=when||new Date();
+  const freshEnough = h.ts && Math.abs(t-h.ts) < 20*60*1000;   // Google's snapshot still stands
+  if(h.weekOk===false){
+    // the written week did not survive checking, so only the snapshot is trusted
+    if(typeof h.openNow==='boolean' && freshEnough) return {open:h.openNow, closingAt:null};
+    return null;
+  }
+  if(!h.week) return (typeof h.openNow==='boolean' && freshEnough) ? {open:h.openNow, closingAt:null} : null;
+  const o=openAt(h.week, t);
   if(o===null) return null;
-  const soon = o ? closingSoon(h.week, when||new Date()) : null;
-  return {open:o, closingAt:soon};
+  return {open:o, closingAt: o ? closingSoon(h.week, t) : null};
 }
 
 /* ---------------- detail ---------------- */
