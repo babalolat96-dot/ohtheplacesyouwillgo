@@ -83,6 +83,8 @@ const SCHEMA = {
       radiusKm: { type: 'number', description: 'Only if they state a distance or say "walking distance".' },
       party: { type: 'integer', description: 'How many people, if stated. "for two" is 2.' },
       when: { type: 'string', description: 'Any timing mentioned, verbatim, e.g. "tomorrow", "tonight".' },
+      wantsAfter: { type: 'boolean',
+        description: 'True when they are planning an occasion rather than looking for one place right now: a date, a night out, "what can I do after", "where should I take her". False for an immediate single need like "coffee near me" or "I want a drink now".' },
       reply: { type: 'string',
         description: 'One short sentence, under 15 words, saying what you looked for. No greeting, no filler.' },
     },
@@ -104,7 +106,11 @@ Rules:
 - Do not set useMyLocation when a venue or area anchors the request.
 - "in the middle", "between us", "halfway" -> between=true.
 - If nothing narrows it, return one stop with kind "any".
-- Never put a cuisine in locations, or a place name in cuisines.`;
+- Never put a cuisine in locations, or a place name in cuisines.
+- wantsAfter is about intent, not wording. Set it true for anything being planned:
+  "somewhere in Soho for the date", "where can I take her", "going to the park,
+  what after", "night out in Dalston". Set it false for an immediate single need:
+  "coffee near me", "I want a drink now", "closest pub".`;
 
 exports.handler = async (event) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
