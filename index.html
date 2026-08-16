@@ -843,6 +843,30 @@ select:disabled{opacity:.5}
   min-width:16px; height:16px; font-size:10.5px; display:grid; place-items:center; padding:0 4px}
 body.detail-open .mobtab{display:none}
 
+
+/* ---------- ask / plans ---------- */
+.askrow{display:flex; align-items:center; gap:8px; width:100%; border:0; background:none;
+  padding:9px; border-radius:8px; cursor:pointer; text-align:left; font-size:13px}
+.askrow:hover,.askrow.hi{background:var(--surface-2)}
+.askrow .gi{background:var(--accent)}
+.askrow .gi svg{fill:var(--accent-ink)}
+.askrow b{font-weight:600}
+.planbar{padding:10px 16px; border-bottom:1px solid var(--line); background:var(--surface-2);
+  font-size:13px; color:var(--ink); display:flex; gap:10px; align-items:flex-start}
+.planbar .pb{flex:1}
+.planbar .via{display:block; margin-top:3px; font-size:11.5px; color:var(--ink-3)}
+.planbar button{border:0;background:none;color:var(--accent);cursor:pointer;font-size:12.5px;flex:none}
+.thinking{padding:14px 16px; font-size:13px; color:var(--ink-3)}
+.pair{padding:12px 16px; border-bottom:1px solid var(--line); cursor:pointer}
+.pair:hover{background:var(--surface-2)}
+.pair .leg{display:flex; gap:11px; align-items:flex-start}
+.pair .leg+.leg{margin-top:9px}
+.pair h3{margin:0; font-size:14.5px; font-weight:600}
+.pair .meta{margin:1px 0 0; font-size:12px; color:var(--ink-3)}
+.pair .step{font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-3);
+  margin-bottom:3px}
+.pair .walk{margin:8px 0 0 37px; font-size:11.5px; color:var(--ink-3)}
+
 /* ---------- results ---------- */
 .bar{padding:9px 16px; flex:0 0 auto; display:flex; align-items:center; gap:10px;
   border-bottom:1px solid var(--line); font-size:12.5px; color:var(--ink-3)}
@@ -1130,7 +1154,7 @@ if(window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').match
 }
 
 /* ---------------- state ---------------- */
-const S = {q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
+const S = {plan:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
            bands:new Set(), cuis:new Set(), srcs:new Set(),
            matchAll:false, me:null, meLabel:'', radius:0, sel:null};
 const BANDS=[['£','£ under ~15'],['££','££ 15-35'],['£££','£££ 35-70'],['££££','££££ 70+'],['Free','Free']];
@@ -1342,14 +1366,21 @@ let hiIdx=-1, suggestions=[];
 function buildSuggestions(){
   const t=q.value.trim();
   suggestions=[];
+  const words=t.split(/\s+/).filter(Boolean).length;
   if(t.length>=2){
+    if(words>=3) suggestions.push({type:'ask', text:t});
     gazSearch(t).forEach(g=>suggestions.push({type:'place', g}));
     const tl=t.toLowerCase();
     DATA.filter(d=>d.n.toLowerCase().includes(tl)).slice(0,5)
         .forEach(d=>suggestions.push({type:'spot', d}));
+    if(words===2 && suggestions.length===0) suggestions.push({type:'ask', text:t});
   }
   if(!suggestions.length){ qdrop.classList.remove('open'); qdrop.innerHTML=''; return; }
   qdrop.innerHTML = suggestions.map((s0,i)=>{
+    if(s0.type==='ask')
+      return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
+        '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 4.6 18.9L22 22l-1.1-5.4A10 10 0 0 0 12 2zm0 5a3 3 0 0 1 1.7 5.5c-.5.3-.7.6-.7 1v.5h-2v-.8c0-1 .5-1.6 1.3-2.1.5-.3.7-.6.7-1a1 1 0 1 0-2 0H9a3 3 0 0 1 3-3zm-1 8.5h2v2h-2v-2z"/></svg>'+
+        '</span><span>Ask: <b>'+esc(s0.text)+'</b></span></button>';
     if(s0.type==='place')
       return '<button type="button" data-i="'+i+'"><span class="gi">'+
         '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>'+
@@ -1365,6 +1396,7 @@ function buildSuggestions(){
 function closeDrop(){ qdrop.classList.remove('open'); hiIdx=-1; }
 function choose(s0){
   if(!s0) return;
+  if(s0.type==='ask'){ ask(s0.text); return; }
   closeDrop();
   if(s0.type==='place'){
     q.value=''; S.q=''; sw.classList.remove('has');
@@ -1409,7 +1441,7 @@ q.onkeydown=e=>{
   }
 };
 document.getElementById('clrq').onclick=()=>{
-  q.value='';S.q='';sw.classList.remove('has');closeDrop();render();q.focus();
+  q.value='';S.q='';sw.classList.remove('has');closeDrop();S.plan=null;render();q.focus();
 };
 
 /* ---------------- distance origin: my location, or any searched place ---------------- */
@@ -1470,6 +1502,188 @@ function dist(a,b){
   return 2*R*Math.asin(Math.sqrt(s));
 }
 
+
+/* ================= ask: language in, plan out ================= */
+const KINDWORDS=[
+  ['drink',/\b(drinks?|bar|bars|pub|pubs|cocktails?|wine|beer|pint|natural wine)\b/],
+  ['coffee',/\b(coffee|matcha|caf[ée]|cafes?|brunch|pastry|pastries|bakery)\b/],
+  ['eat',/\b(eat|food|dinner|lunch|restaurants?|meal|dine|supper|bite|hungry)\b/],
+  ['outdoors',/\b(park|parks|walk|outside|outdoors|green|picnic|garden)\b/],
+  ['culture',/\b(gallery|galleries|museum|exhibition|cinema|film|culture|show|gig|comedy)\b/],
+  ['shop',/\b(shop|shopping|bookshop|books|vintage|thrift)\b/],
+];
+const TAGWORDS=[
+  ['date-night',/\b(date|romantic|for two|just us|impress)\b/],
+  ['late',/\b(late|night ?out|party|dancing|club|after ?hours)\b/],
+  ['livemusic',/\b(live music|jazz|band|gig)\b/],
+  ['listening',/\b(listening bar|hi-?fi|records?|vinyl)\b/],
+  ['free',/\b(free|no money|skint)\b/],
+  ['matcha',/\b(matcha)\b/],
+  ['green',/\b(picnic|sunshine|outdoors|in the sun)\b/],
+  ['summer',/\b(rooftop|terrace|summer)\b/],
+  ['special',/\b(anniversary|birthday|special occasion|celebrat)\b/],
+];
+const CHEAP=/\b(cheap|cheaply|budget|tenner|affordable|inexpensive|under £?\d+)\b/;
+const FANCY=/\b(fancy|nice|posh|splash|treat|special|blow out|blowout)\b/;
+const BETWEEN=/\b(in the middle|halfway|half way|between|meet in the middle|midway)\b/;
+const NEARME=/\b(near me|close by|nearby|around here|round here|near by)\b/;
+const BANDORDER=['£','££','£££','££££'];
+
+function findPlaces(t){
+  const hits=[];
+  GAZ.forEach(g=>{
+    const n=g.name.toLowerCase();
+    if(n.length<4) return;
+    const re=new RegExp('\\b'+n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i');
+    if(re.test(t)) hits.push(g);
+  });
+  hits.sort((a,b)=>b.name.length-a.name.length);
+  const out=[];
+  hits.forEach(h=>{ if(!out.some(o=>o.name.toLowerCase().includes(h.name.toLowerCase()))) out.push(h); });
+  return out.slice(0,3);
+}
+
+const CUIVOCAB=(()=>{
+  const set=new Set();
+  DATA.forEach(d=>{ if(d.cui) String(d.cui).split(/[\/&,]/).forEach(x=>{
+    x=x.trim(); if(x.length>3 && !/^(restaurant|other|takeaway)$/i.test(x)) set.add(x); }); });
+  ['sushi','ramen','tapas','pizza','curry','noodles','dumplings','bbq','kebab','tacos','pasta']
+    .forEach(x=>set.add(x));
+  return [...set].sort((a,b)=>b.length-a.length);
+})();
+function findCuisines(seg){
+  const out=[];
+  CUIVOCAB.forEach(c=>{
+    if(out.length>=3) return;
+    const re=new RegExp('\\b'+c.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i');
+    if(re.test(seg) && !out.some(o=>o.toLowerCase()===c.toLowerCase())) out.push(c);
+  });
+  return out;
+}
+
+function parseLocal(text){
+  const t=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
+  const segs=t.split(/\bthen\b|\bfollowed by\b|\bafter that\b/).map(x=>x.trim()).filter(Boolean);
+  const stops=[];
+  segs.forEach(seg=>{
+    let kind=(KINDWORDS.find(([,re])=>re.test(seg))||[])[0];
+    const cuisines=findCuisines(seg);
+    if(!kind && cuisines.length) kind='eat';
+    const tags=TAGWORDS.filter(([,re])=>re.test(seg)).map(([k])=>k);
+    const maxBand = CHEAP.test(seg) ? '£' : FANCY.test(seg) ? '£££' : null;
+    if(kind||tags.length||maxBand||cuisines.length)
+      stops.push({kind:kind||'any', cuisines, tags, maxBand, label:null});
+  });
+  if(!stops.length){
+    let kind=(KINDWORDS.find(([,re])=>re.test(t))||[])[0];
+    const cuisines=findCuisines(t);
+    if(!kind && cuisines.length) kind='eat';
+    const tags=TAGWORDS.filter(([,re])=>re.test(t)).map(([k])=>k);
+    if(kind||tags.length||cuisines.length) stops.push({kind:kind||'any', cuisines, tags,
+      maxBand: CHEAP.test(t)?'£':FANCY.test(t)?'£££':null});
+  }
+  if(!stops.length) return null;
+  const places=findPlaces(t);
+  const plan={
+    stops,
+    locations: places.map(p=>p.name),
+    between: BETWEEN.test(t) && places.length>=2,
+    useMyLocation: NEARME.test(t) || (!places.length),
+    party: /\bfor two\b|\bthe two of us\b/.test(t) ? 2 : null,
+    reply: null, via:'built in',
+  };
+  const confident = stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)) || places.length>0;
+  return confident ? plan : null;
+}
+
+/* ---- turn a plan into results ---- */
+function stopMatches(st){
+  return DATA.filter(d=>{
+    if(!d.lat) return false;
+    if(st.kind && st.kind!=='any' && d.c!==st.kind) return false;
+    if(st.cuisines && st.cuisines.length){
+      const c=(d.cui||d.t||'').toLowerCase();
+      if(!st.cuisines.some(x=>c.includes(String(x).toLowerCase()))) return false;
+    }
+    if(st.maxBand && d.band && d.band!=='Free'){
+      if(BANDORDER.indexOf(d.band) > BANDORDER.indexOf(st.maxBand)) return false;
+    }
+    if(st.tags && st.tags.length && !st.tags.some(t=>d.tags.includes(t))) return false;
+    return true;
+  });
+}
+function planOrigin(plan){
+  const pts=(plan.locations||[]).map(n=>{
+    const g=GAZ.find(x=>x.name.toLowerCase()===String(n).toLowerCase()) || gazSearch(String(n))[0];
+    return g ? [g.lat,g.lng] : null;
+  }).filter(Boolean);
+  if(plan.between && pts.length>=2)
+    return {pt:[(pts[0][0]+pts[1][0])/2,(pts[0][1]+pts[1][1])/2],
+            label:'between '+plan.locations[0]+' and '+plan.locations[1]};
+  if(pts.length) return {pt:pts[0], label:plan.locations[0]};
+  if(plan.useMyLocation && S.me) return {pt:S.me, label:'you'};
+  if(S.me) return {pt:S.me, label:'you'};
+  return null;
+}
+function runPlan(plan){
+  const origin=planOrigin(plan);
+  const rad=plan.radiusKm || (plan.between ? 4 : origin ? 3 : 0);
+  const rank=(rows)=>rows.map(d=>({d, km: origin?dist(origin.pt,[d.lat,d.lng]):null}))
+    .filter(x=>!rad || x.km===null || x.km<=rad)
+    .sort((a,b)=> (a.km!==null? a.km-b.km : (parseFloat(b.d.rat||0)-parseFloat(a.d.rat||0))));
+  const stops=(plan.stops&&plan.stops.length?plan.stops:[{kind:'any'}]);
+  let result;
+  if(stops.length>=2){
+    const A=rank(stopMatches(stops[0])).slice(0,30);
+    const Ball=stopMatches(stops[1]);
+    const pairs=[];
+    A.forEach(a=>{
+      let best=null;
+      Ball.forEach(b=>{
+        if(b.n===a.d.n) return;
+        const w=dist([a.d.lat,a.d.lng],[b.lat,b.lng]);
+        if(w>1.3) return;
+        const sc=w - (parseFloat(b.rat||0)*0.05) + (a.km||0)*0.35;
+        if(!best||sc<best.sc) best={b, w, sc};
+      });
+      if(best) pairs.push({a:a.d, b:best.b, walk:best.w, km:a.km, sc:best.sc});
+    });
+    pairs.sort((x,y)=>x.sc-y.sc);
+    result={type:'pairs', pairs:pairs.slice(0,10), origin, plan};
+  } else {
+    result={type:'rows', rows:rank(stopMatches(stops[0])).slice(0,40).map(x=>x.d), origin, plan};
+  }
+  S.plan=result;
+  if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
+  render();
+  const pts=(result.type==='pairs'
+      ? result.pairs.flatMap(p=>[[p.a.lat,p.a.lng],[p.b.lat,p.b.lng]])
+      : result.rows.map(d=>[d.lat,d.lng])).slice(0,16);
+  if(origin) pts.push(origin.pt);
+  if(pts.length) map.flyToBounds(L.latLngBounds(pts),{padding:[45,45],maxZoom:15,duration:.8});
+  return result;
+}
+function clearPlan(){ S.plan=null; render(); }
+
+async function ask(text){
+  closeDrop();
+  q.value=''; S.q=''; sw.classList.remove('has');
+  const local=parseLocal(text);
+  if(local){ local.reply=null; local.asked=text; runPlan(local); }
+  else { S.plan={type:'thinking', asked:text}; render(); }
+  try{
+    const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({q:text})});
+    const d=await r.json();
+    if(d && d.plan){ d.plan.asked=text; d.plan.via='understood'; runPlan(d.plan); }
+    else if(!local){ S.plan={type:'failed', asked:text,
+      why:(d&&d.error==='no_key')?'The language model is not connected yet.':'I could not read that one.'};
+      render(); }
+  }catch(e){
+    if(!local){ S.plan={type:'failed', asked:text, why:'No connection to the planner.'}; render(); }
+  }
+}
+
 /* ---------------- filtering ---------------- */
 function match(d){
   if(S.cats.size && !S.cats.has(d.c)) return false;
@@ -1495,6 +1709,7 @@ function match(d){
 const listEl=document.getElementById('list'), countEl=document.getElementById('count');
 
 function render(){
+  if(S.plan){ renderPlan(); return; }
   let rows=DATA.filter(match);
   if(S.me) rows.sort((a,b)=>{
     if(!a.lat) return 1; if(!b.lat) return -1;
@@ -1529,6 +1744,63 @@ function render(){
     'Some entries are dated events — check the post before you go.</p>';
   listEl.appendChild(f);
   updateFilterCount();
+}
+
+
+function planBar(p){
+  const el=document.createElement('div');
+  el.className='planbar';
+  const via = p.plan && p.plan.via==='understood' ? 'understood' : 'matched here on your phone';
+  el.innerHTML='<div class="pb">'+esc((p.plan&&p.plan.reply)||('Looking for: '+((p.plan&&p.plan.asked)||'')))+
+    '<span class="via">'+(p.origin?('near '+esc(p.origin.label)+' · '):'')+via+'</span></div>'+
+    '<button id="clearplan">clear</button>';
+  setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
+  return el;
+}
+function pairCard(p){
+  const el=document.createElement('div'); el.className='pair'; el.tabIndex=0;
+  const leg=(d,step)=>'<div class="leg"><div class="pin" style="background:'+css('--'+d.c)+'">'+svg(d.c)+
+    '</div><div style="min-width:0;flex:1"><div class="step">'+step+'</div><h3>'+esc(d.n)+'</h3>'+
+    '<p class="meta">'+esc([d.hood||d.area, d.cui||d.t, d.band||'', d.rat?('★ '+d.rat):''].filter(Boolean).join(' · '))+'</p></div></div>';
+  el.innerHTML=leg(p.a,'First')+'<div class="walk">'+fmtDist(p.walk)+' walk</div>'+leg(p.b,'Then');
+  el.onclick=()=>openDetail(p.a,true);
+  return el;
+}
+function renderPlan(){
+  const p=S.plan;
+  listEl.innerHTML='';
+  if(p.type==='thinking'){
+    countEl.textContent='thinking…';
+    listEl.innerHTML='<div class="thinking">Working out what you mean by “'+esc(p.asked)+'”…</div>';
+    if(typeof applySnap==='function' && window.innerWidth<=860 && snapIdx===0) applySnap(1);
+    return;
+  }
+  if(p.type==='failed'){
+    countEl.textContent='no plan';
+    listEl.innerHTML='<div class="empty">'+esc(p.why)+'<br><br>Try naming a place, like “drinks near Peckham”.</div>';
+    const f=document.createElement('div'); f.className='planbar';
+    f.innerHTML='<div class="pb">'+esc(p.asked)+'</div><button id="clearplan">clear</button>';
+    setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
+    listEl.prepend(f);
+    return;
+  }
+  const items = p.type==='pairs' ? p.pairs : p.rows;
+  countEl.textContent = items.length ? (items.length+(p.type==='pairs'?' pairings':' spots')) : 'nothing matched';
+  cluster.clearLayers();
+  const live=[];
+  const push=d=>{ const m=markers.get(d.n); if(m) live.push(m); };
+  if(p.type==='pairs') p.pairs.forEach(x=>{push(x.a);push(x.b);}); else p.rows.forEach(push);
+  cluster.addLayers(live);
+  listEl.appendChild(planBar(p));
+  if(!items.length){
+    listEl.insertAdjacentHTML('beforeend',
+      '<div class="empty">Nothing in the bank fits that yet.<br>Try widening it, or clear and browse.</div>');
+  }
+  const frag=document.createDocumentFragment();
+  if(p.type==='pairs') p.pairs.forEach(x=>frag.appendChild(pairCard(x)));
+  else p.rows.forEach(d=>frag.appendChild(card(d)));
+  listEl.appendChild(frag);
+  if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
 }
 
 function card(d){
@@ -1691,7 +1963,7 @@ document.getElementById('reset').onclick=()=>{
   S.bands.clear();S.cuis.clear();S.srcs.clear();S.matchAll=false;
   document.getElementById('matchall').checked=false;
   document.querySelectorAll('.filters .chip').forEach(c=>c.setAttribute('aria-pressed','false'));
-  clearOrigin(); closeDrop();
+  S.plan=null; clearOrigin(); closeDrop();
   render(); homeView();
 };
 
