@@ -34,14 +34,20 @@ function clean(p) {
   const c = KINDS.includes(p.c) ? p.c : (KINDS.includes(p.kind) ? p.kind : 'eat');
   const BANDS = ['Free', '£', '££', '£££', '££££'];
   const s = (v, n) => v ? String(v).slice(0, n) : null;
+  // a place can arrive from an Instagram post: it keeps the post's words and
+  // a link back, the same respect the Substack gets. Only instagram.com links.
+  const isInsta = p.src === 'insta';
+  const postUrl = isInsta && /^https:\/\/(www\.)?instagram\.com\//.test(String(p.mu || ''))
+    ? String(p.mu).slice(0, 200) : null;
   return {
     n: name, aka: [], t: s(p.t || p.type || c, 40), c, lat, lng,
     area: s(p.area, 60), hood: s(p.hood || p.area, 60), boro: null, reg: s(p.reg, 20),
     addr: s(p.addr || p.address, 200), pc: s(p.pc || p.postcode, 10),
     tags: Array.isArray(p.tags) ? p.tags.slice(0, 6).map(t => String(t).slice(0, 30)) : [],
     price: null, conf: 'mine', fixed: true, orders: [], prices: [], vibes: [],
-    m: [{ t: 'Saved by you', u: null, b: String(p.note || p.why || '').slice(0, 400) }],
-    src: 'mine', cui: s(p.cui, 40),
+    m: [{ t: isInsta ? (s(p.mt, 80) || 'From Instagram') : 'Saved by you',
+          u: postUrl, b: String(p.note || p.why || '').slice(0, 400) }],
+    src: isInsta ? 'insta' : 'mine', cui: s(p.cui, 40),
     band: BANDS.includes(p.band) ? p.band : null,
     rat: p.rat != null ? String(p.rat).slice(0, 4) : (p.rating != null ? String(p.rating).slice(0, 4) : null),
     gid: s(p.gid || p.id, 200),

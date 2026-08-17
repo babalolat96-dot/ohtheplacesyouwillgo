@@ -71,7 +71,7 @@ async function getDetails(key, id) {
     'regularOpeningHours', 'currentOpeningHours',
     'rating', 'userRatingCount', 'priceLevel',
     'websiteUri', 'nationalPhoneNumber', 'businessStatus',
-    'photos',
+    'photos', 'types', 'primaryType',
   ].join(',');
   const r = await fetch(BASE + '/places/' + encodeURIComponent(id) +
     '?languageCode=en-GB&regionCode=GB', {
@@ -133,6 +133,8 @@ exports.handler = async (event) => {
       website: d.websiteUri || null,
       phone: d.nationalPhoneNumber || null,
       status: d.businessStatus || null,
+      types: d.types || [],
+      primaryType: d.primaryType || null,
       // the client asks for images through our own /api/photo so the key never ships
       photo: photoName ? '/api/photo?name=' + encodeURIComponent(photoName) + '&w=800' : null,
       photos: photoRefs.map(n2 => '/api/photo?name=' + encodeURIComponent(n2) + '&w=800'),
