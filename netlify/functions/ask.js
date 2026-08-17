@@ -112,14 +112,34 @@ Rules:
   what after", "night out in Dalston". Set it false for an immediate single need:
   "coffee near me", "I want a drink now", "closest pub".`;
 
+const MERGE = `This message is a FOLLOW-UP to an earlier request, supplied as JSON.
+Return the COMPLETE merged query: keep every field from the earlier request that
+the follow-up does not change, and change only what it asks to change.
+- "cheaper" keeps the same stops and locations, lowers maxBand to "£".
+- "what about soho" keeps the stops, replaces locations with ["Soho"].
+- "drinks instead" swaps the stop kind, keeps everything else.
+- "there will be 6 of us" only changes party.
+- A completely new request (new kind AND new area, unrelated to the earlier one)
+  replaces it outright rather than merging.
+Never carry the earlier "anchor" venue into venues - it is where they already
+looked, not something they named now.`;
+
 exports.handler = async (event) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   if (event.httpMethod === 'OPTIONS') return { statusCode: 204, headers };
   if (event.httpMethod !== 'POST')
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'POST only' }) };
 
-  let q = '';
-  try { q = (JSON.parse(event.body || '{}').q || '').toString().slice(0, 400); } catch (e) {}
+  let q = '', prev = null;
+  try {
+    const body = JSON.parse(event.body || '{}');
+    q = (body.q || '').toString().slice(0, 400);
+    // a follow-up carries the previous query as context, already compacted
+    if (body.prev && typeof body.prev === 'object') {
+      const s = JSON.stringify(body.prev);
+      if (s.length <= 2000) prev = s;
+    }
+  } catch (e) {}
   if (!q.trim()) return { statusCode: 400, headers, body: JSON.stringify({ error: 'empty' }) };
 
   const key = findKey();
@@ -139,10 +159,12 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         model,
         max_tokens: 600,
-        system: SYSTEM,
+        system: prev ? SYSTEM + '\n\n' + MERGE : SYSTEM,
         tools: [SCHEMA],
         tool_choice: { type: 'tool', name: 'plan' },
-        messages: [{ role: 'user', content: q }],
+        messages: [{ role: 'user', content: prev
+          ? 'Earlier request (JSON): ' + prev + '\nFollow-up: ' + q
+          : q }],
       }),
     });
     const d = await r.json();
