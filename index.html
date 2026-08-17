@@ -1538,6 +1538,8 @@ function buildSuggestions(){
     // when it could be either, offer both, in the likelier order.
     const readsAsRequest = !!parseLocal(t);
     const canLookUp = !places.length && !spots.length && t.length>=3;
+    /* with a plan on screen, following up on it is the first offer */
+    if(planActive()) suggestions.push({type:'follow', text:t});
     if(canLookUp && !readsAsRequest) suggestions.push({type:'lookup', text:t});
     if(words>=2) suggestions.push({type:'ask', text:t});
     if(canLookUp && readsAsRequest) suggestions.push({type:'lookup', text:t});
@@ -1551,10 +1553,14 @@ function buildSuggestions(){
       return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
         '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>'+
         '</span><span>Not in your bank. <b>Look up '+esc(s0.text)+'</b></span></button>';
+    if(s0.type==='follow')
+      return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
+        '<svg viewBox="0 0 24 24"><path d="M20 4v9a4 4 0 0 1-4 4H8.8l3.6 3.6L11 22l-6-6 6-6 1.4 1.4L8.8 15H16a2 2 0 0 0 2-2V4h2z"/></svg>'+
+        '</span><span>Follow up: <b>'+esc(s0.text)+'</b></span></button>';
     if(s0.type==='ask')
       return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
         '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 4.6 18.9L22 22l-1.1-5.4A10 10 0 0 0 12 2zm0 5a3 3 0 0 1 1.7 5.5c-.5.3-.7.6-.7 1v.5h-2v-.8c0-1 .5-1.6 1.3-2.1.5-.3.7-.6.7-1a1 1 0 1 0-2 0H9a3 3 0 0 1 3-3zm-1 8.5h2v2h-2v-2z"/></svg>'+
-        '</span><span>Ask: <b>'+esc(s0.text)+'</b></span></button>';
+        '</span><span>'+(planActive()?'New search':'Ask')+': <b>'+esc(s0.text)+'</b></span></button>';
     if(s0.type==='place')
       return '<button type="button" data-i="'+i+'"><span class="gi">'+
         '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>'+
@@ -1570,7 +1576,8 @@ function buildSuggestions(){
 function closeDrop(){ qdrop.classList.remove('open'); hiIdx=-1; }
 function choose(s0){
   if(!s0) return;
-  if(s0.type==='ask'){ ask(s0.text); return; }
+  if(s0.type==='follow'){ ask(s0.text); return; }
+  if(s0.type==='ask'){ ask(s0.text, planActive()); return; }   // fresh when a plan is up
   if(s0.type==='lookup'){ lookup(s0.text); return; }
   closeDrop();
   if(s0.type==='place'){
@@ -1596,15 +1603,17 @@ function focusOrigin(n){
   const pts=[S.me, ...near.map(x=>[x.d.lat,x.d.lng])];
   map.flyToBounds(L.latLngBounds(pts),{padding:[45,45], maxZoom:15.5, duration:.8});
 }
-function askable(){ return q.value.trim().split(/\s+/).filter(Boolean).length>=2; }
+function planActive(){ return !!(S.plan && (S.plan.type==='anchor'||S.plan.type==='rows')); }
+/* one word is enough for a follow-up ("cheaper"); a fresh ask needs two */
+function askable(){ return q.value.trim().split(/\s+/).filter(Boolean).length >= (planActive()?1:2); }
 q.oninput=()=>{
   S.q=q.value.trim().toLowerCase();
   sw.classList.toggle('has',!!q.value);
   sw.classList.toggle('ask', askable());
-  if(S.q && (S.plan || S.sug)){        // starting a new one wipes the last
-    S.plan=null; S.sug=null; drawSugMarkers([]); drawRoute(null); drawAlts(null);
-  }
-  buildSuggestions(); render();
+  /* typing no longer wipes an active plan — you can follow up on it.
+     A new plan replaces it only when you actually send one. */
+  buildSuggestions();
+  if(!S.plan) render();
 };
 q.onfocus=()=>{ if(q.value.trim()) q.select(); buildSuggestions(); };
 q.onblur=()=>setTimeout(closeDrop,140);
@@ -1975,6 +1984,7 @@ const WHENWORDS=[
   [/\bbrunch\b/, d=>{const x=new Date(d); x.setHours(11,0,0,0); return x;}],
 ];
 function whenFrom(plan){
+  if(plan && plan._startAt) return new Date(plan._startAt);   // shifted by "earlier"/"later"
   const t=String((plan&&plan.when)||'').toLowerCase()+' '+String((plan&&plan.asked)||'').toLowerCase();
   const now=new Date();
   // a named day, optionally with a time
@@ -2013,6 +2023,7 @@ const AFTER={eat:['drink','culture'], drink:['eat','drink'], coffee:['outdoors',
 
 /* when the evening starts: what they said, else a sensible hour */
 function startTimeFor(plan){
+  if(plan._startAt) return new Date(plan._startAt);   // "earlier"/"later" shifted it
   const w=whenFrom(plan);
   if(w) return w;
   const d=new Date();
@@ -2026,6 +2037,7 @@ function dwellFor(kind){ return DWELL[kind]||DWELL.any; }
    The Walthamstow bookshop opens Saturdays only, so the honest default is
    the next Saturday afternoon, said plainly in the header. */
 function routeStart(rt, plan){
+  if(plan._startAt) return new Date(plan._startAt);   // "earlier"/"later" shifted it
   const said=whenFrom(plan);
   if(said) return said;
   const d=new Date();
@@ -2473,10 +2485,143 @@ async function lookup(name){
   render();
 }
 
-async function ask(text){
+/* ---- following up: the last plan is context, not history to be wiped ---- */
+
+/* strip a plan down to what a follow-up needs to know */
+function planSummary(plan, res){
+  return {
+    asked: plan.asked||null,
+    stops: (plan.stops||[]).map(s=>({kind:s.kind, cuisines:s.cuisines||[],
+      maxBand:s.maxBand||null, tags:s.tags||[]})),
+    locations: plan.locations||[], venues: plan.venues||[],
+    party: plan.party||null, when: plan.when||null,
+    wantsAfter: plan.wantsAfter!==false,
+    anchor: (res && res.anchor && res.anchor.d.n)||null,
+  };
+}
+
+/* Read a refinement on the phone, no model call. Returns the COMPLETE merged
+   plan, or null when it is not a refinement we can read locally. */
+function localRefine(prev, prevResult, text){
+  const t=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
+  const merged=JSON.parse(JSON.stringify({
+    stops:(prev.stops&&prev.stops.length)?prev.stops:[{kind:'any'}],
+    locations:prev.locations||[], venues:[],
+    between:!!prev.between, useMyLocation:!!prev.useMyLocation,
+    party:prev.party||null,
+    when:prev.when||prev.asked||null,     // timing often lives in the first sentence
+    wantsAfter:prev.wantsAfter!==false,
+    radiusKm:prev.radiusKm||null, routeId:prev.routeId||null}));
+  merged.stops.forEach(s=>{ s.cuisines=s.cuisines||[]; s.tags=s.tags||[]; });
+  let changed=false;
+  // price
+  if(/\b(cheaper|cheap|budget|less pricey|a tenner)\b/.test(t)){
+    merged.stops.forEach(s=>s.maxBand='£'); changed=true; }
+  else if(/\b(fancier|nicer|posher|fancy|special|splash out)\b/.test(t)){
+    merged.stops.forEach(s=>s.maxBand=null);
+    merged.stops[0].tags=[...new Set([...merged.stops[0].tags,'special'])]; changed=true; }
+  // distance
+  if(/\b(closer|nearer|too far|walkable|walking distance)\b/.test(t)){
+    merged.radiusKm=Math.max(.6,(merged.radiusKm||2)/2); changed=true; }
+  // swap what kind of place ("drinks instead", "what about coffee")
+  const kindHit=(KINDWORDS.find(([,re])=>re.test(t))||[])[0];
+  if(kindHit && /\b(instead|what about|rather|actually|swap|change|make it)\b/.test(t)){
+    const idx=(/\bafter\b/.test(t)&&merged.stops.length>1)?merged.stops.length-1:0;
+    merged.stops[idx]={kind:kindHit, cuisines:[], tags:merged.stops[idx].tags||[],
+      maxBand:merged.stops[idx].maxBand||null};
+    changed=true; }
+  // cuisine ("make it italian")
+  const cui=findCuisines(t);
+  if(cui.length){
+    let i2=merged.stops.findIndex(s=>s.kind==='eat'); if(i2<0) i2=0;
+    merged.stops[i2].cuisines=cui;
+    if(merged.stops[i2].kind==='any') merged.stops[i2].kind='eat';
+    changed=true; }
+  // vibe
+  const tg=TAGWORDS.filter(([,re])=>re.test(t)).map(([k])=>k);
+  if(tg.length){ merged.stops[0].tags=[...new Set([...merged.stops[0].tags,...tg])]; changed=true; }
+  // area ("in peckham instead", "near me")
+  const pl=findPlaces(t);
+  if(pl.length){ merged.locations=pl.map(p=>p.name); merged.useMyLocation=false;
+    merged.between=BETWEEN.test(t)&&pl.length>=2; changed=true; }
+  else if(NEARME.test(t)){ merged.useMyLocation=true; merged.locations=[]; changed=true; }
+  // timing: a named day or time word replaces the old one; earlier/later shifts it
+  if(WHENWORDS.some(([re])=>re.test(t)) ||
+     DAYS.some(d=>new RegExp('\\b'+d.toLowerCase()+'\\b').test(t))){
+    merged.when=text; changed=true; }
+  else if(/\b(earlier|later)\b/.test(t)){
+    const base=(prevResult&&prevResult.start)||S.planWhen||new Date();
+    merged._startAt=new Date(base.getTime()+(/\blater\b/.test(t)?1:-1)*3600000).toISOString();
+    changed=true; }
+  // how many of you
+  const pn=partyFrom(t);
+  if(pn){ merged.party=pn; changed=true; }
+  if(!changed) return null;
+  merged.via='refined'; merged._strong=true; merged.reply=null;
+  return merged;
+}
+
+async function ask(text, fresh){
   closeDrop();
   q.value=''; S.q=''; sw.classList.remove('has'); sw.classList.remove('ask');
   S.anchorPlace=null;
+  const prevResult=planActive()?S.plan:null;
+  let prevPlan=(prevResult && !fresh)?prevResult.plan:null;
+  /* a complete request of its own — a kind AND a place, or a curated day —
+     is a new ask, not a refinement of the last one */
+  if(prevPlan){
+    const asNew=parseLocal(text);
+    if(asNew && asNew._strong &&
+       ((asNew.locations&&asNew.locations.length) || (asNew.venues&&asNew.venues.length) || asNew.routeId)){
+      prevPlan=null; fresh=true;
+    }
+  }
+
+  /* -------- follow-up on the plan already on screen -------- */
+  if(prevPlan){
+    if(/^\s*(another( one)?|something else|next|swap( it)?)\s*[.!]?\s*$/i.test(text)){
+      anotherAnchor(); return;
+    }
+    const merged=localRefine(prevPlan, prevResult, text);
+    if(merged){
+      merged.asked=text;
+      runPlan(merged);
+      const known=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(d=>d.n);
+      const sugQ=(prevPlan.asked?prevPlan.asked+' — but ':'')+text;
+      const thin=(S.plan.type==='rows' && S.plan.rows.length<4)
+        || (S.plan.type==='anchor' && (!S.plan.anchor || S.plan.onward.length<2));
+      if(thin) fetchSuggestions(sugQ, known);
+      else { S.sug={idle:true, text:sugQ, known}; renderPlan(); }
+      return;
+    }
+    /* not readable here: the model merges it, with the old plan as context */
+    S.plan={type:'thinking', asked:text}; render();
+    try{
+      const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({q:text, prev:planSummary(prevPlan, prevResult)})});
+      const d=await r.json();
+      if(d && d.plan){
+        d.plan.asked=text; d.plan.via='understood';
+        await resolveVenues(d.plan);
+        runPlan(d.plan);
+        const known2=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(x=>x.n);
+        const thin2=(S.plan.type==='rows' && S.plan.rows.length<4)
+          || (S.plan.type==='anchor' && (!S.plan.anchor || S.plan.onward.length<2));
+        if(thin2) fetchSuggestions(text, known2);
+        else { S.sug={idle:true, text, known:known2}; renderPlan(); }
+      } else {
+        S.plan=prevResult; render();
+        toast('Could not read that one — still showing your last plan');
+      }
+    }catch(e){
+      S.plan=prevResult; render();
+      toast('No connection — still showing your last plan');
+    }
+    return;
+  }
+
+  /* -------- a fresh ask -------- */
+  if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawRoute(null); drawAlts(null); }
   const local=parseLocal(text);
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
@@ -2577,7 +2722,9 @@ function render(){
 function planBar(p){
   const el=document.createElement('div');
   el.className='planbar';
-  const via = p.plan && p.plan.via==='understood' ? 'understood' : 'matched here on your phone';
+  const via = p.plan && p.plan.via==='understood' ? 'understood'
+    : p.plan && p.plan.via==='refined' ? 'refined from your last ask'
+    : 'matched here on your phone';
   const wide = p.widened ? ' · nothing very close, widened to '+Math.round(p.rad)+'km' : '';
   const when = S.planWhen ? ' · for '+S.planWhen.toLocaleDateString('en-GB',{weekday:'short'})+' '+
       String(S.planWhen.getHours()).padStart(2,'0')+':'+String(S.planWhen.getMinutes()).padStart(2,'0') : '';
