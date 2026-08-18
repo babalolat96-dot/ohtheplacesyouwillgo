@@ -2,7 +2,7 @@
 <html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#0d0d0d">
 <title>Oh the places you will go</title>
 <style>/* leaflet 1.9.4 */
@@ -779,7 +779,10 @@ a{color:var(--accent)}
 .prompts:empty{display:none}
 
 /* ---------- filters ---------- */
-.filters{padding:12px 16px 13px; border-bottom:1px solid var(--line); flex:0 0 auto}
+/* filters live behind the Filters button everywhere now — the list and the
+   map get the room. body.filters-open shows them (desktop and phone alike). */
+.filters{padding:12px 16px 13px; border-bottom:1px solid var(--line); flex:0 0 auto; display:none}
+body.filters-open .filters{display:block}
 .fgroup+.fgroup{margin-top:12px}
 details.more{margin-top:11px}
 details.more>summary{
@@ -856,7 +859,7 @@ select:disabled{opacity:.5}
 #geostatus .warn{color:var(--ink-2)}
 .lnk{border:0;background:none;padding:0;color:var(--accent);cursor:pointer;font-size:11.5px}
 .fbtn{
-  display:none; border:1px solid var(--line); background:var(--chip); border-radius:999px;
+  display:inline-flex; border:1px solid var(--line); background:var(--chip); border-radius:999px;
   padding:5px 11px; font-size:12.5px; cursor:pointer; align-items:center; gap:6px
 }
 .fbtn[aria-expanded="true"]{background:var(--chip-on); color:var(--chip-on-ink); border-color:var(--chip-on)}
@@ -1125,6 +1128,12 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
 /* ---------- mobile: full-screen map with a draggable results sheet ---------- */
 @media (max-width:860px){
   html,body{height:100%; overflow:hidden}
+  /* the page itself never zooms: no double-tap zoom (the map has its own
+     gestures), and every input is 16px so iOS Safari has no reason to zoom
+     in on focus. This is what keeps the map zoom feeling steady. */
+  body{touch-action:manipulation; -webkit-text-size-adjust:100%}
+  .search input, .combo input, .combo select, .instabox input[type=url],
+  .instabox input[type=file], .passbox input{font-size:16px}
   .app{display:block; height:100dvh; min-height:100dvh}
   .panel{height:auto; overflow:visible; border-right:0; display:block}
 
@@ -1169,9 +1178,40 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
     touch-action:auto;
   }
   .sheet.dragging{transition:none}
+  /* the sheet is 86dvh tall but pushed down by --sheetY, so its tail hangs
+     below the screen. Pad the list by the same amount or the last cards
+     ("Not in your bank", the footer) can never be scrolled into view. */
   .sheet .list{flex:1; overflow-y:hidden; overscroll-behavior:contain;
-    -webkit-overflow-scrolling:touch; touch-action:pan-y}
+    -webkit-overflow-scrolling:touch; touch-action:pan-y;
+    padding-bottom:calc(var(--sheetY, 52dvh) + 28px)}
   .sheet.open .list{overflow-y:auto}
+  /* a place is a card over the map, not a page you leave — while it is open,
+     the header and sheet step aside so the map gets the whole screen */
+  body.detail-open .sheet{transform:translateY(102%) !important}
+  body.detail-open .hd, body.detail-open .filters{display:none}
+  body.detail-open .app .mapwrap{top:0}
+  .gstrip img{height:170px}
+  .detail{
+    top:auto; left:0; right:0; bottom:0; width:100%; height:auto;
+    max-height:64dvh; border-right:0; border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0; transform:translateY(105%);
+    transition:transform .28s cubic-bezier(.32,.72,0,1);
+    box-shadow:0 -10px 34px rgba(0,0,0,.28);
+  }
+  .detail.open{transform:none; visibility:visible}
+  .detail.dragging{transition:none}
+  .grab{display:block; flex:none; padding:9px 0 3px; cursor:grab}
+  .grab i{display:block; width:40px; height:4px; border-radius:99px;
+    background:var(--line); margin:0 auto}
+  .dhd{padding:6px 16px 10px; border-bottom:0}
+  .dhd h2{font-size:19px}
+  .dbody{padding:0 16px 10px}
+  #photoslot .gphoto, #photoslot .gstrip{border-radius:14px}
+  .dactions{border-top:1px solid var(--line); padding:10px 12px
+    calc(12px + env(safe-area-inset-bottom)); flex-wrap:nowrap; overflow-x:auto;
+    scrollbar-width:none}
+  .dactions::-webkit-scrollbar{display:none}
+  .dactions .btn{flex:none; border-radius:999px; padding:9px 15px}
   .grip{touch-action:none}
   .sheet .bar{touch-action:none}
   .grip{flex:none; padding:9px 0 5px; cursor:grab}
@@ -1181,8 +1221,6 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .card{padding-right:14px; padding-left:14px}
   .foot{padding-bottom:40px}
   .hd,.filters,.list,.bar{min-width:0}
-
-  .detail{width:100%; border-right:0}
 }
 .mapwrap{position:relative; height:100%}
 </style>
@@ -1264,6 +1302,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
 
     <div class="detail" id="detail" role="dialog" aria-label="Venue details">
       <div class="grab" id="grab" aria-hidden="true"><i></i></div>
+      <div id="photoslot"></div>
       <div class="dhd">
         <h2 id="dname"></h2>
         <button class="iconbtn" id="dclose" aria-label="Back to list">
@@ -1764,6 +1803,18 @@ function drawFix(acc){
   }
 }
 function flyHome(){ if(lastFix) map.flyTo(lastFix, Math.max(map.getZoom(), 15), {duration:.7}); }
+/* Centre a tapped place without the zoom lurch: never zoom past 16, never
+   below 14.5, and on the phone shift the pin up so it sits above the card. */
+function focusPin(lat, lng){
+  const z=Math.min(Math.max(map.getZoom(), 14.5), 16);
+  let target=[lat, lng];
+  if(window.innerWidth<=860){
+    const pt=map.project(target, z);
+    pt.y += map.getSize().y*0.20;
+    target=map.unproject(pt, z);
+  }
+  map.flyTo(target, z, {duration:.55});
+}
 function startFix(fromTap){
   if(!navigator.geolocation){ if(fromTap) geoFail('This browser has no location support.'); return; }
   if(fixWatch!=null){ if(fromTap){ if(lastFix) flyHome(); else wantFly=true; } return; }
@@ -2174,7 +2225,8 @@ function buildPlan(plan, origin, start, excluded){
   }
 
   /* otherwise pick one, scoring how good the night looks *from* it */
-  const pool=stopMatches(stops[0]).filter(d=>d.lat && !ex.has(d.n));
+  const pool=stopMatches(stops[0]).filter(d=>d.lat && !ex.has(d.n) &&
+    (!plan._reg || (d.reg && d.reg.toLowerCase().includes(plan._reg))));
   const near=pool.map(d=>({d, km:origin?dist(origin.pt,[d.lat,d.lng]):0}))
                  .sort((a,b)=>a.km-b.km).slice(0, origin?26:26);
   const scored=near.map(x=>{
@@ -2288,7 +2340,31 @@ function drawRoute(r){
       opacity:.5, dashArray:'2 6', lineCap:'round'}))).addTo(map);
 }
 
+/* "west london" is a region, not a pin. Read it so the bank answers with the
+   right slice — and so we can tell when that slice is thin. */
+function regionFrom(plan){
+  const src=(((plan.locations||[]).join(' '))+' '+(plan.asked||'')).toLowerCase();
+  const m=src.match(/\b(north|south|east|west|central)(?:[- ](east|west))?\s+london\b/);
+  return m ? (m[1]+(m[2]?' '+m[2]:'')).trim() : null;
+}
+
+/* Does the bank actually cover this ask? Knowing where it is weak is what
+   lets the app look beyond it without being told to. */
+function bankThin(res){
+  if(!res) return true;
+  if(res.type==='anchor') return !res.anchor || res.onward.length<2;
+  if(res.type!=='rows') return false;
+  const rows=res.rows||[];
+  if(!rows.length) return true;
+  if(res.origin){
+    const r=Math.max(res.rad||0, 3);
+    return rows.filter(d=>d.lat && dist(res.origin.pt,[d.lat,d.lng])<=r).length<8;
+  }
+  return rows.length<6;
+}
+
 function runPlan(plan){
+  plan._reg=regionFrom(plan);
   if(plan.routeId){
     const rt=ROUTES.find(x=>x.id===plan.routeId);
     if(rt && !plan.reply) plan.reply='“'+rt.title+'” — '+rt.brief;
@@ -2318,6 +2394,7 @@ function runPlan(plan){
     rad=r; return out;
   };
   const stops=(plan.stops&&plan.stops.length?plan.stops:[{kind:'any'}]);
+  const inRegion=d=>!plan._reg || (d.reg && d.reg.toLowerCase().includes(plan._reg));
   let result;
   const named = !!(origin && origin.venue) || !!plan._gv;
   if(stops.length>=2 || named || plan.wantsAfter){
@@ -2326,7 +2403,8 @@ function runPlan(plan){
     result.widened=widened; result.rad=rad;
     if(result.anchor && !plan.reply){ plan.reply=describePlan(result); plan._autoReply=true; }
   } else {
-    result={type:'rows', rows:rank(stopMatches(stops[0])).slice(0,40).map(x=>x.d), origin, plan, widened, rad};
+    result={type:'rows', rows:rank(stopMatches(stops[0]).filter(inRegion)).slice(0,40).map(x=>x.d),
+            origin, plan, widened, rad};
   }
   S.plan=result;
   S.planWhen=whenFrom(plan);
@@ -2407,8 +2485,8 @@ async function googleFind(text){
     return (d && d.places) ? d.places.slice(0,4) : [];
   }catch(e){ return []; }
 }
-async function fetchSuggestions(text, known){
-  S.sug={loading:true, places:[]};
+async function fetchSuggestions(text, known, auto){
+  S.sug={loading:true, places:[], auto:!!auto};
   renderPlan();
   try{
     const r=await fetch('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2419,10 +2497,10 @@ async function fetchSuggestions(text, known){
     /* the model came back empty. If this reads like a venue name, ask Google
        straight out, rather than telling them nothing exists. */
     if(!places.length && looksLikeName(text)) places=await googleFind(text);
-    S.sug={loading:false, places, proposed:d.proposed, verified:d.verified};
+    S.sug={loading:false, places, proposed:d.proposed, verified:d.verified, auto:!!auto};
   }catch(e){
     const places=looksLikeName(text)?await googleFind(text):[];
-    S.sug={loading:false, places, failed:!places.length};
+    S.sug={loading:false, places, failed:!places.length, auto:!!auto};
   }
   drawSugMarkers(S.sug.places);
   renderPlan();
@@ -2474,12 +2552,12 @@ function openSuggestion(p){
       (already?'In your bank':'Save to my bank')+'</button>';
   const sb=document.getElementById('dsave');
   if(sb && !already) sb.onclick=()=>savePlace(p, sb);
+  const ps1=document.getElementById('photoslot'); if(ps1) ps1.innerHTML='';
   detail.classList.add('open'); document.body.classList.add('detail-open');
   // was reading an undefined "d" here, which threw and killed everything below it
   if(p.lat) fetchLive({n:p.name, lat:p.lat, lng:p.lng, gid:p.id||p.placeId||null})
     .then(live=>paintLive(p.name, live));
-  if(window.innerWidth<=860){ setTimeout(()=>{ map.invalidateSize();
-    map.setView([p.lat,p.lng], 16, {animate:true}); }, 120); }
+  if(p.lat) setTimeout(()=>{ map.invalidateSize(); focusPin(p.lat, p.lng); }, 120);
 }
 
 async function lookup(name){
@@ -2629,9 +2707,7 @@ async function ask(text, fresh){
       runPlan(merged);
       const known=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(d=>d.n);
       const sugQ=(prevPlan.asked?prevPlan.asked+' — but ':'')+text;
-      const thin=(S.plan.type==='rows' && S.plan.rows.length<4)
-        || (S.plan.type==='anchor' && (!S.plan.anchor || S.plan.onward.length<2));
-      if(thin) fetchSuggestions(sugQ, known);
+      if(bankThin(S.plan)) fetchSuggestions(sugQ, known, true);
       else { S.sug={idle:true, text:sugQ, known}; renderPlan(); }
       return;
     }
@@ -2646,9 +2722,7 @@ async function ask(text, fresh){
         await resolveVenues(d.plan);
         runPlan(d.plan);
         const known2=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(x=>x.n);
-        const thin2=(S.plan.type==='rows' && S.plan.rows.length<4)
-          || (S.plan.type==='anchor' && (!S.plan.anchor || S.plan.onward.length<2));
-        if(thin2) fetchSuggestions(text, known2);
+        if(bankThin(S.plan)) fetchSuggestions(text, known2, true);
         else { S.sug={idle:true, text, known:known2}; renderPlan(); }
       } else {
         S.plan=prevResult; render();
@@ -2670,10 +2744,7 @@ async function ask(text, fresh){
   const known=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(d=>d.n);
   /* the wider search is a model call plus several lookups. Run it only when
      your own bank came up short; otherwise offer it as a button. */
-  const thin = !S.plan
-    || (S.plan.type==='rows' && S.plan.rows.length<4)
-    || (S.plan.type==='anchor' && (!S.plan.anchor || S.plan.onward.length<2));
-  if(thin) fetchSuggestions(text, known);
+  if(bankThin(S.plan)) fetchSuggestions(text, known, true);
   else { S.sug={idle:true, text, known}; renderPlan(); }
 
   // the built-in parser already read this one completely: no need to ask twice
@@ -2803,15 +2874,18 @@ function renderSuggestions(){
   }
   if(sg.loading){
     listEl.insertAdjacentHTML('beforeend',
-      '<div class="sechead">Also worth knowing</div><div class="loadingrow">Looking beyond your bank…</div>');
+      '<div class="sechead">Also worth knowing</div><div class="loadingrow">'+
+      (sg.auto?'Your bank is thin for this one — looking beyond it…':'Looking beyond your bank…')+'</div>');
     return;
   }
   if(!sg.places.length){
+    const why = sg.failed ? 'the wider search could not be reached just now.'
+      : sg.proposed ? ('the model put forward '+sg.proposed+', and none could be confirmed against the food hygiene register, so none are shown.')
+      : 'nothing else came up beyond your own list.';
     listEl.insertAdjacentHTML('beforeend',
       '<div class="sechead">Not in your bank</div><div class="secnote">'+
-      (sg.failed ? 'Could not reach the wider search just now.'
-       : sg.proposed ? ('The model put forward '+sg.proposed+', but none could be confirmed against the food hygiene register, so I have left them out.')
-       : 'Nothing else came up beyond your own list.')+'</div>');
+      (sg.auto ? 'Your bank is thin for this one, so the wider search ran on its own — but '+why
+               : why.charAt(0).toUpperCase()+why.slice(1))+'</div>');
     return;
   }
   const head=document.createElement('div');
@@ -2819,7 +2893,8 @@ function renderSuggestions(){
   head.innerHTML='Not in your bank <span class="badge">'+sg.places.length+' suggested</span>';
   listEl.appendChild(head);
   listEl.insertAdjacentHTML('beforeend',
-    '<div class="secnote">The model put these forward and each address was checked against the '+
+    '<div class="secnote">'+(sg.auto?'Your bank is thin for this one, so the wider search ran on its own. ':'')+
+    'The model put these forward and each address was checked against the '+
     'UK food hygiene register. Nobody you trust has vouched for them.</div>');
   const f=document.createDocumentFragment();
   sg.places.forEach(p=>f.appendChild(sugCard(p)));
@@ -3034,14 +3109,19 @@ async function fetchLive(d){
   liveCache.set(key,pr);
   return pr;
 }
+/* photos live in their own slot at the very top of the card, Steps-style */
+function photosHtml(live){
+  if(!live || live.error) return '';
+  if(live.photos && live.photos.length>1)
+    return '<div class="gstrip">'+live.photos.map(u=>
+      '<img src="'+esc(u)+'" alt="" loading="lazy" onerror="this.remove()">').join('')+'</div>';
+  if(live.photo) return '<img class="gphoto" src="'+live.photo+'" alt="" loading="lazy" '+
+    'onerror="this.remove()">';
+  return '';
+}
 function liveHtml(live){
   if(!live || live.error) return '';
   let h='';
-  if(live.photos && live.photos.length>1)
-    h+='<div class="gstrip">'+live.photos.map(u=>
-      '<img src="'+esc(u)+'" alt="" loading="lazy" onerror="this.remove()">').join('')+'</div>';
-  else if(live.photo) h+='<img class="gphoto" src="'+live.photo+'" alt="" loading="lazy" '+
-    'onerror="this.remove()">';
   const bits=[];
   const on=live.hours && live.hours.openNow;
   if(on===true) bits.push('<span class="openbadge yes">Open now</span>');
@@ -3066,6 +3146,8 @@ function liveHtml(live){
 function paintLive(name, live){
   const slot=document.getElementById('liveslot');
   if(!slot || dname.textContent!==name) return;
+  const ps=document.getElementById('photoslot');
+  if(ps) ps.innerHTML=photosHtml(live);
   const html=liveHtml(live);
   slot.innerHTML = html || '';
   const acts=document.getElementById('dactions');
@@ -3338,8 +3420,15 @@ function openInstaSheet(url){
     w.onclick=e=>{ if(e.target===w) w.remove(); };
     w.querySelector('#igno').onclick=()=>w.remove();
     w.querySelector('#iggo').onclick=readInstaPost;
+    /* say what will actually happen: a link alone can only ever get the caption */
+    const sync=()=>{ const hasFiles=w.querySelector('#igfiles').files.length>0;
+      w.querySelector('#iggo').textContent=hasFiles?'Read the post':'Read caption only';
+      w.querySelector('#iggo').title=hasFiles?'':'Screenshots see the slides and video too'; };
+    w.querySelector('#igfiles').onchange=sync;
+    w._sync=sync;
   }
   if(url) w.querySelector('#iglink').value=url;
+  w._sync();
   const f=w.querySelector('#igfiles'); setTimeout(()=>f.focus(),50);
 }
 async function readInstaPost(){
@@ -3361,7 +3450,7 @@ async function readInstaPost(){
   if(vids.length){
     const fr=await sampleVideoFrames(vids[0], Math.max(2, 8-images.length));
     if(!fr.length && !images.length){
-      go.disabled=false; go.textContent='Read the post';
+      go.disabled=false; if(w._sync) w._sync();
       out.innerHTML='<p class="ighead">Could not read that video on this device — screenshots still work.</p>';
       return;
     }
@@ -3374,7 +3463,7 @@ async function readInstaPost(){
       body:JSON.stringify({images, link:w.querySelector('#iglink').value.trim()||null})});
     j=await r.json();
   }catch(e){ j={error:'offline'}; }
-  go.disabled=false; go.textContent='Read the post';
+  go.disabled=false; if(w._sync) w._sync();
   if(j && j.error==='link_walled'){
     out.innerHTML='<p class="ighead">Instagram wouldn\'t show that post to the app — they wall most of it. '+
       'Screenshots always work: grab the post and pick them above.</p>';
@@ -3630,21 +3719,16 @@ function openDetail(d,fly){
   const ub=document.getElementById('dunsave');
   if(ub) ub.onclick=()=>unsavePlace(d.n);
 
+  const ps0=document.getElementById('photoslot'); if(ps0) ps0.innerHTML='';
   detail.classList.add('open'); document.body.classList.add('detail-open');
   if(d.lat) fetchLive(d).then(live=>paintLive(d.n, live));
   if(window.innerWidth<=860) setTimeout(()=>map.invalidateSize(), 80);
   document.querySelectorAll('.mk.sel').forEach(e=>e.classList.remove('sel'));
   const m=markers.get(d.n);
   if(m){
-    if(fly && window.innerWidth>860) map.flyTo([d.lat,d.lng], Math.max(map.getZoom(),15.5), {duration:.6});
     cluster.zoomToShowLayer(m,()=>{
       const el=m.getElement(); if(el) el.querySelector('.mk').classList.add('sel');
-      if(window.innerWidth<=860){
-        setTimeout(()=>{
-          map.invalidateSize();
-          map.setView([d.lat,d.lng], 16, {animate:true});
-        }, 420);
-      }
+      if(fly || window.innerWidth<=860) setTimeout(()=>focusPin(d.lat, d.lng), 60);
     });
   }
 }
