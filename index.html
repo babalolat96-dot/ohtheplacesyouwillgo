@@ -867,6 +867,7 @@ select:disabled{opacity:.5}
 .fbtn .b{background:var(--accent); color:var(--accent-ink); border-radius:999px;
   min-width:16px; height:16px; font-size:10.5px; display:grid; place-items:center; padding:0 4px}
 body.detail-open .mobtab{display:none}
+.composer,.menufab,.botmask{display:none}
 
 
 /* ---------- ask / plans ---------- */
@@ -954,6 +955,8 @@ body.detail-open .mobtab{display:none}
 /* your own saves */
 .mk.mine{box-shadow:0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,.35)}
 .mk.insta{box-shadow:0 0 0 2px #d6339f, 0 2px 6px rgba(0,0,0,.35)}
+.mk.fav{box-shadow:0 0 0 2px #e8b019, 0 2px 6px rgba(0,0,0,.35)}
+.favmark{color:#e0245e; font-size:12px}
 .card.mine .pin{box-shadow:0 0 0 2px var(--accent)}
 .tag.mine{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
 .savebtn{margin-left:auto; align-self:flex-start; border:1px solid var(--line);
@@ -1002,7 +1005,7 @@ body.detail-open .mobtab{display:none}
 .live{display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin:0 0 12px}
 .openbadge{font-size:12px; padding:3px 9px; border-radius:999px; font-weight:600}
 .openbadge.yes{background:#0ca30c; color:#fff}
-.openbadge.no{background:var(--surface-2); color:var(--ink-2); border:1px solid var(--line)}
+.openbadge.no{background:#c8372d; color:#fff}
 .hoursbox{margin:0 0 14px; font-size:12.5px; color:var(--ink-2)}
 .hoursbox summary{cursor:pointer; color:var(--ink-3); font-size:12px; list-style:none}
 .hoursbox summary::-webkit-details-marker{display:none}
@@ -1012,8 +1015,9 @@ body.detail-open .mobtab{display:none}
 .livewait{font-size:12px; color:var(--ink-3); margin:0 0 12px}
 .card .now,.rtext .now,.after .now{font-size:10.5px; padding:2px 7px; border-radius:999px;
   background:#0ca30c; color:#fff}
+/* closed reads as closed: red, not a shrug */
 .card .shut,.rtext .shut,.after .shut{font-size:10.5px; padding:2px 7px; border-radius:999px;
-  background:var(--surface-2); color:var(--ink-3); border:1px solid var(--line)}
+  background:#c8372d; color:#fff}
 
 /* ---------- results ---------- */
 .bar{padding:9px 16px; flex:0 0 auto; display:flex; align-items:center; gap:10px;
@@ -1124,6 +1128,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
 .leaflet-bar a{background:var(--surface)!important;color:var(--ink)!important;border-color:var(--line)!important}
 
 .mobtab{display:none}
+.composer,.menufab,.botmask{display:none}
 
 /* ---------- mobile: full-screen map with a draggable results sheet ---------- */
 @media (max-width:860px){
@@ -1137,39 +1142,75 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .app{display:block; height:100dvh; min-height:100dvh}
   .panel{height:auto; overflow:visible; border-right:0; display:block}
 
-  .hd{
-    position:fixed; top:0; left:0; right:0; z-index:24; padding:10px 14px 8px;
-    background:var(--surface); border-bottom:1px solid var(--line);
+  /* ---- the chat shell: no header, full-bleed map, composer at the bottom ---- */
+  .hd{display:none}
+  .app .mapwrap{top:0 !important}
+  .leaflet-control-zoom{display:none}
+  .menufab{
+    display:grid; position:fixed; top:calc(10px + env(safe-area-inset-top)); left:10px;
+    z-index:35; width:40px; height:40px; border-radius:50%; border:1px solid var(--line);
+    background:var(--surface); place-items:center; color:var(--ink-2);
+    box-shadow:0 2px 10px rgba(0,0,0,.2); cursor:pointer;
   }
-  .sub{display:none}
-  .title{font-size:16px}
-  .iconbtn{width:30px;height:30px}
-  .search{margin-top:8px}
-  .search input{padding:9px 32px}
-  .nearrow{padding-top:8px}
-  #geostatus{padding:0; margin:6px 0 0}
-
-  .filters{
-    position:fixed; top:var(--stick,150px); left:0; right:0; z-index:23; display:none;
-    max-height:calc(100dvh - var(--stick,150px) - 40px); overflow-y:auto;
-    -webkit-overflow-scrolling:touch; overscroll-behavior:contain;
-    background:var(--surface); border-bottom:1px solid var(--line);
-    padding:12px 0 18px; box-shadow:var(--shadow);
+  .botmask{display:block; position:fixed; left:0; right:0; bottom:0;
+    height:calc(76px + env(safe-area-inset-bottom)); z-index:20; pointer-events:none;
+    background:linear-gradient(to top, var(--plane) 58%, transparent)}
+  .composer{
+    position:fixed; left:10px; right:10px; bottom:calc(10px + env(safe-area-inset-bottom));
+    z-index:44; display:flex; align-items:center; gap:7px;
+    background:var(--surface); border:1px solid var(--line); border-radius:999px;
+    padding:6px 8px; box-shadow:0 10px 34px rgba(0,0,0,.3);
+    transform:translateY(var(--kb, 0px)); transition:transform .18s ease-out;
   }
-  body.filters-open .filters{display:block}
-  .fbtn{display:inline-flex !important}
-  .fgroup>.flabel{padding:0 14px}
-  .filters .chips{padding:0 14px; min-width:0}
+  .cbtn{flex:none; width:34px; height:34px; border-radius:50%; border:0;
+    background:var(--surface-2); color:var(--ink-2); display:grid; place-items:center; cursor:pointer}
+  .orb{flex:none; width:23px; height:23px; border-radius:50%;
+    background:conic-gradient(from 0deg,#2a78d6,#8b5cd6,#d65ca8,#35b98a,#2a78d6);
+    animation:orbspin 7s linear infinite}
+  body.thinking .orb{animation-duration:1s; box-shadow:0 0 16px rgba(139,92,214,.6)}
+  #cslot{flex:1; min-width:0}
+  .composer .search{margin:0}
+  .composer .search>svg{display:none}
+  .composer .search input{border:0; background:none; padding:8px 58px 8px 2px}
+  .composer .search input:focus{outline:none; border-color:transparent}
+  .composer .cbdrop{top:auto; bottom:calc(100% + 12px); max-height:46dvh; border-radius:16px}
+  .prompts{
+    position:fixed; left:10px; right:10px; bottom:calc(78px + env(safe-area-inset-bottom));
+    z-index:38; display:flex; gap:6px; overflow-x:auto; scrollbar-width:none; padding:4px 2px;
+    transform:translateY(var(--kb, 0px));
+  }
+  .prompts::-webkit-scrollbar{display:none}
+  .prompts button{flex:none; white-space:nowrap}
+  /* the reply is a chat bubble at the top of the sheet, orb as its avatar */
+  .planbar{
+    margin:6px 12px 4px; border:1px solid var(--line); border-radius:16px 16px 16px 5px;
+    background:var(--surface-2); padding:10px 12px; align-items:flex-start;
+  }
+  .planbar::before{content:''; width:17px; height:17px; border-radius:50%; flex:none; margin-top:2px;
+    background:conic-gradient(from 0deg,#2a78d6,#8b5cd6,#d65ca8,#35b98a,#2a78d6)}
+  .menuwrap{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.45)}
+  .menu{position:absolute; left:0; right:0; bottom:0; background:var(--surface);
+    border-radius:20px 20px 0 0; padding:16px 16px calc(20px + env(safe-area-inset-bottom));
+    max-height:82dvh; overflow-y:auto; box-shadow:0 -10px 34px rgba(0,0,0,.3)}
+  .mhead{margin-bottom:12px}
+  .mhead b{font-size:15px}
+  .msub{display:block; font-size:11.5px; color:var(--ink-3); margin-top:2px}
+  .menu .filters{display:block; border-bottom:0; padding:12px 0 0}
+  .menu #fbtn{display:none}
+  .menu .nearrow{margin-top:2px}
+  .menu #geostatus{margin:8px 0 0; font-size:12px; color:var(--ink-3)}
+  .mrow{display:flex; gap:10px; margin-top:14px; align-items:center}
+  .mrow .iconbtn{width:38px; height:38px}
 
   .app .mapwrap{
-    position:fixed; left:0; right:0; top:var(--stick,150px); bottom:0;
+    position:fixed; left:0; right:0; top:0; bottom:0;
     height:auto; z-index:3; border:0;
   }
   .legend{display:none}
 
-  /* the results sheet */
+  /* the results sheet — the conversation, anchored above the composer */
   .sheet{
-    position:fixed; left:0; right:0; bottom:0; z-index:14;
+    position:fixed; left:0; right:0; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:14;
     height:86dvh; display:flex; flex-direction:column;
     background:var(--surface); border-radius:18px 18px 0 0;
     box-shadow:0 -8px 28px rgba(0,0,0,.22);
@@ -1192,8 +1233,9 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   body.detail-open .app .mapwrap{top:0}
   .gstrip img{height:170px}
   .detail{
-    top:auto; left:0; right:0; bottom:0; width:100%; height:auto;
-    max-height:64dvh; border-right:0; border-top:1px solid var(--line);
+    top:auto; left:0; right:0; bottom:calc(72px + env(safe-area-inset-bottom));
+    width:100%; height:auto;
+    max-height:62dvh; border-right:0; border-top:1px solid var(--line);
     border-radius:20px 20px 0 0; transform:translateY(105%);
     transition:transform .28s cubic-bezier(.32,.72,0,1);
     box-shadow:0 -10px 34px rgba(0,0,0,.28);
@@ -1256,6 +1298,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
           Near me
         </button>
         <button class="fbtn" id="fbtn" aria-expanded="false">Filters<span class="b" id="fcount" hidden>0</span></button>
+        <button class="fbtn" id="favchip" aria-pressed="false" hidden>♥ Favourites</button>
         <select id="radius" disabled>
           <option value="0" selected>any distance</option>
           <option value="1">within 1 km</option>
@@ -1299,6 +1342,28 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
     </div>
 
     <div class="list" id="list"></div>
+
+    <!-- the chat shell (phones): map behind, one composer, the sheet is the chat -->
+    <button class="menufab" id="menufab" aria-label="Menu">
+      <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+    </button>
+    <div class="botmask" aria-hidden="true"></div>
+    <div class="composer" id="composer">
+      <button class="cbtn" id="newchat" title="Start a new search" aria-label="Start a new search">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <span class="orb" id="orb" aria-hidden="true"></span>
+      <div id="cslot"></div>
+    </div>
+    <div class="menuwrap" id="menuwrap" hidden>
+      <div class="menu">
+        <div class="mhead"><b>Oh the places you will go</b>
+          <span class="msub"><span id="mcount"></span> London spots · <a href="https://sowhatsthesitch.substack.com" target="_blank" rel="noopener">so what's the sitch</a> + Olaloye's list</span></div>
+        <div id="mslot1"></div>
+        <div id="mslot2"></div>
+        <div class="mrow" id="mactions"><span class="msub" style="align-self:center">Add from Instagram · theme</span></div>
+      </div>
+    </div>
 
     <div class="detail" id="detail" role="dialog" aria-label="Venue details">
       <div class="grab" id="grab" aria-hidden="true"><i></i></div>
@@ -1383,7 +1448,8 @@ if(window.matchMedia && !window.matchMedia('(prefers-color-scheme: dark)').match
 /* ---------------- state ---------------- */
 const S = {plan:null, sug:null, anchorPlace:null, planWhen:null, q:'', vibes:new Set(), cats:new Set(), regs:new Set(),
            bands:new Set(), cuis:new Set(), srcs:new Set(),
-           matchAll:false, me:null, meLabel:'', radius:0, sel:null};
+           matchAll:false, me:null, meLabel:'', radius:0, sel:null,
+           favs:new Set(), favOnly:false, _taste:null};
 const BANDS=[['£','£ under ~15'],['££','££ 15-35'],['£££','£££ 35-70'],['££££','££££ 70+'],['Free','Free']];
 const SRCS=[['sitch',"so what's the sitch"],['olaloye',"Olaloye's list"],
             ['insta','From Instagram'],['mine','Saved by you']];
@@ -1614,16 +1680,11 @@ function buildSuggestions(){
     const spots=DATA.filter(d=>d.n.toLowerCase().includes(tl)).slice(0,5);
     // an unrecognised name is usually "where is this place"; a request is not.
     // when it could be either, offer both, in the likelier order.
-    const readsAsRequest = !!parseLocal(t);
-    const canLookUp = !places.length && !spots.length && t.length>=3;
-    /* with a plan on screen, following up on it is the first offer */
-    if(planActive()) suggestions.push({type:'follow', text:t});
-    if(canLookUp && !readsAsRequest) suggestions.push({type:'lookup', text:t});
-    if(words>=2) suggestions.push({type:'ask', text:t});
-    if(canLookUp && readsAsRequest) suggestions.push({type:'lookup', text:t});
+    /* the dropdown is autocomplete only — known spots and places. The send
+       button is the one action; it works out follow-up / fresh / lookup
+       itself, the way a chat does. No more three kinds of search to learn. */
     places.forEach(g=>suggestions.push({type:'place', g}));
     spots.forEach(d=>suggestions.push({type:'spot', d}));
-
   }
   if(!suggestions.length){ qdrop.classList.remove('open'); qdrop.innerHTML=''; return; }
   qdrop.innerHTML = suggestions.map((s0,i)=>{
@@ -1631,14 +1692,6 @@ function buildSuggestions(){
       return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
         '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>'+
         '</span><span>Not in your bank. <b>Look up '+esc(s0.text)+'</b></span></button>';
-    if(s0.type==='follow')
-      return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
-        '<svg viewBox="0 0 24 24"><path d="M20 4v9a4 4 0 0 1-4 4H8.8l3.6 3.6L11 22l-6-6 6-6 1.4 1.4L8.8 15H16a2 2 0 0 0 2-2V4h2z"/></svg>'+
-        '</span><span>Follow up: <b>'+esc(s0.text)+'</b></span></button>';
-    if(s0.type==='ask')
-      return '<button type="button" class="askrow" data-i="'+i+'"><span class="gi">'+
-        '<svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 4.6 18.9L22 22l-1.1-5.4A10 10 0 0 0 12 2zm0 5a3 3 0 0 1 1.7 5.5c-.5.3-.7.6-.7 1v.5h-2v-.8c0-1 .5-1.6 1.3-2.1.5-.3.7-.6.7-1a1 1 0 1 0-2 0H9a3 3 0 0 1 3-3zm-1 8.5h2v2h-2v-2z"/></svg>'+
-        '</span><span>'+(planActive()?'New search':'Ask')+': <b>'+esc(s0.text)+'</b></span></button>';
     if(s0.type==='place')
       return '<button type="button" data-i="'+i+'"><span class="gi">'+
         '<svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z"/></svg>'+
@@ -1656,9 +1709,6 @@ function choose(s0){
   if(!s0) return;
   if(s0.type==='ig'){ q.value=''; S.q=''; sw.classList.remove('has'); closeDrop();
     openInstaSheet(s0.url); return; }
-  if(s0.type==='follow'){ ask(s0.text); return; }
-  if(s0.type==='ask'){ ask(s0.text, planActive()); return; }   // fresh when a plan is up
-  if(s0.type==='lookup'){ lookup(s0.text); return; }
   closeDrop();
   if(s0.type==='place'){
     q.value=''; S.q=''; sw.classList.remove('has');
@@ -1684,8 +1734,8 @@ function focusOrigin(n){
   map.flyToBounds(L.latLngBounds(pts),{padding:[45,45], maxZoom:15.5, duration:.8});
 }
 function planActive(){ return !!(S.plan && (S.plan.type==='anchor'||S.plan.type==='rows')); }
-/* one word is enough for a follow-up ("cheaper"); a fresh ask needs two */
-function askable(){ return q.value.trim().split(/\s+/).filter(Boolean).length >= (planActive()?1:2); }
+/* one word is always enough: send works out what you meant */
+function askable(){ return q.value.trim().length>=2; }
 q.oninput=()=>{
   S.q=q.value.trim().toLowerCase();
   sw.classList.toggle('has',!!q.value);
@@ -1709,7 +1759,6 @@ q.onkeydown=e=>{
     e.preventDefault();
     if(hiIdx>=0) choose(suggestions[hiIdx]);
     else if(askable()) ask(q.value.trim());
-    else choose(suggestions[0]);
   }
 };
 document.getElementById('clrq').onclick=()=>{
@@ -2180,7 +2229,8 @@ function onwardFrom(d, leaveAt, spec, banned, cap){
       if(st && !st.open) return;                       // no point offering a shut door
       seen.add(o.n);
       out.push({d:o, w, arrive, open:st?st.open:null, closingAt:st?st.closingAt:null,
-                cost: w - parseFloat(o.rat||0)*2.4 - (o.src==='mine'?5:0)});
+                cost: w - parseFloat(o.rat||0)*2.4 - (o.src==='mine'?5:0)
+                       - Math.min(tasteBoost(o),6)*0.6});
     });
   });
   out.sort((a,b)=>a.cost-b.cost);
@@ -2239,6 +2289,7 @@ function buildPlan(plan, origin, start, excluded){
     if(st && !st.open) c+=90; else if(!st) c+=6;
     c -= parseFloat(x.d.rat||0)*2.5;
     if(x.d.src==='mine') c-=6;
+    c -= tasteBoost(x.d);          // your favourites teach the planner your vibe
     c -= Math.min(on.length,4)*5;                       // rewarded for what is around it
     if(on[0]) c -= Math.max(0, 8-on[0].w)*0.6;          // and for how close the first one is
     return {d:x.d, w, arrive, open:st?st.open:null, closingAt:st?st.closingAt:null,
@@ -2387,7 +2438,10 @@ function runPlan(plan){
       if(origin && plan._anchor && x.d.n===plan._anchor) return false;   // not the place they just left
       return !r || x.km===null || x.km<=r;
     })
-    .sort((a,b)=> (a.km!==null? a.km-b.km : (parseFloat(b.d.rat||0)-parseFloat(a.d.rat||0))));
+    /* nearest-first is sacred when there is an origin: taste NEVER reorders
+       distance. Without one, taste gives rating a gentle nudge. */
+    .sort((a,b)=> (a.km!==null? a.km-b.km
+      : ((parseFloat(b.d.rat||0)+tasteBoost(b.d)*0.12) - (parseFloat(a.d.rat||0)+tasteBoost(a.d)*0.12))));
   const rank=(rows)=>{
     let r=rad, out=rankAt(rows,r);
     while(origin && out.length<3 && r<16){ r=r*2; out=rankAt(rows,r); widened=true; }
@@ -2491,7 +2545,8 @@ async function fetchSuggestions(text, known, auto){
   try{
     const r=await fetch('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({q:text, known,
-        party:(S.plan&&S.plan.plan&&S.plan.plan.party)||null})});
+        party:(S.plan&&S.plan.plan&&S.plan.plan.party)||null,
+        taste:tasteSummary()})});
     const d=await r.json();
     let places=(d.places||[]);
     /* the model came back empty. If this reads like a venue name, ask Google
@@ -2683,6 +2738,7 @@ function localRefine(prev, prevResult, text){
 async function ask(text, fresh){
   closeDrop();
   q.value=''; S.q=''; sw.classList.remove('has'); sw.classList.remove('ask');
+  q.blur();       // put the keyboard away NOW — the hanging Done button was this
   S.anchorPlace=null;
   const prevResult=planActive()?S.plan:null;
   let prevPlan=(prevResult && !fresh)?prevResult.plan:null;
@@ -2738,6 +2794,8 @@ async function ask(text, fresh){
   /* -------- a fresh ask -------- */
   if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawRoute(null); drawAlts(null); }
   const local=parseLocal(text);
+  /* a bare venue name is "where is this place" — answer it, don't interrogate it */
+  if(!local && looksLikeName(text)){ lookup(text); return; }
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
 
@@ -2769,6 +2827,7 @@ async function ask(text, fresh){
 
 /* ---------------- filtering ---------------- */
 function match(d){
+  if(S.favOnly && !isFav(d)) return false;
   if(S.cats.size && !S.cats.has(d.c)) return false;
   if(S.regs.size && !S.regs.has(d.reg)) return false;
   if(S.bands.size && !S.bands.has(d.band)) return false;
@@ -2792,6 +2851,7 @@ function match(d){
 const listEl=document.getElementById('list'), countEl=document.getElementById('count');
 
 function render(){
+  document.body.classList.toggle('thinking', !!(S.plan && S.plan.type==='thinking'));
   if(S.plan){ renderPlan(); return; }
   let rows=DATA.filter(match);
   if(S.me) rows.sort((a,b)=>{
@@ -2815,6 +2875,18 @@ function render(){
   rows.forEach(d=>frag.appendChild(card(d)));
   listEl.appendChild(frag);
 
+  /* a filtered browse is a shortlist someone is actually weighing up: fetch
+     hours for the top of it so "until 23:00" / "Closed now" shows on the
+     cards without opening one. Cached a week, so this costs almost nothing. */
+  if(rows.length && rows.length<=40 && !render._hydrating){
+    const naked=rows.slice(0,8).filter(d=>d.lat && !knownHours(d.n));
+    if(naked.length){
+      render._hydrating=true;
+      hydrateHours(naked, 8).then(()=>{ render._hydrating=false; if(!S.plan) render(); })
+        .catch(()=>{ render._hydrating=false; });
+    }
+  }
+
   const hiddenUnpinned=UNPINNED.filter(match).length;
   const f=document.createElement('div');
   f.className='foot';
@@ -2837,9 +2909,12 @@ function render(){
 function planBar(p){
   const el=document.createElement('div');
   el.className='planbar';
-  const via = p.plan && p.plan.via==='understood' ? 'understood'
+  let via = p.plan && p.plan.via==='understood' ? 'understood'
     : p.plan && p.plan.via==='refined' ? 'refined from your last ask'
     : 'matched here on your phone';
+  /* say when taste tipped the choice — learning should never be invisible */
+  if(p.type==='anchor' && p.anchor && !p.route && !p.theirs && tasteBoost(p.anchor.d)>=5)
+    via += ' · picked for your taste';
   const wide = p.widened ? ' · nothing very close, widened to '+Math.round(p.rad)+'km' : '';
   const when = S.planWhen ? ' · for '+S.planWhen.toLocaleDateString('en-GB',{weekday:'short'})+' '+
       String(S.planWhen.getHours()).padStart(2,'0')+':'+String(S.planWhen.getMinutes()).padStart(2,'0') : '';
@@ -3079,7 +3154,8 @@ function card(d){
   el.innerHTML =
     '<div class="pin" style="background:'+css('--'+d.c)+'">'+svg(d.c)+'</div>'+
     '<div style="min-width:0;flex:1">'+
-      '<div style="display:flex;align-items:baseline;gap:8px"><h3>'+esc(d.n)+'</h3>'+dd+'</div>'+
+      '<div style="display:flex;align-items:baseline;gap:8px"><h3>'+esc(d.n)+
+        (isFav(d)?' <span class="favmark">♥</span>':'')+'</h3>'+dd+'</div>'+
       '<p class="meta">'+esc(meta)+'</p>'+
       (blurb?'<p class="snip">'+esc(blurb)+'</p>':'')+
       (tags.length?'<div class="tagrow">'+tags.join('')+'</div>':'')+
@@ -3159,6 +3235,85 @@ function paintLive(name, live){
       live.phone.replace(/\s/g,'')+'">Call</a>');
 }
 
+
+/* ============ favourites: what you love, and what that teaches ============
+   A heart is the strongest signal you can give. Favourites weigh 3, saves 1;
+   from them comes a taste profile (tags, cuisines, price, regions) that leans
+   PLANNING answers toward your vibe — with the reason stated. The in-the-moment
+   nearest-first list is never reordered by taste: geography wins when you are
+   standing on a corner wanting a drink. */
+const isFav=d=>S.favs.has(slugOf(d.n));
+function tasteProfile(){
+  const T={tags:{}, cui:{}, band:{}, reg:{}, kind:{}, favNames:[]};
+  DATA.forEach(d=>{
+    let w=0;
+    if(isFav(d)){ w+=3; T.favNames.push(d.n); }
+    if(d.src==='mine'||d.src==='insta') w+=1;
+    if(!w) return;
+    (d.tags||[]).forEach(t=>T.tags[t]=(T.tags[t]||0)+w);
+    if(d.cui) T.cui[d.cui]=(T.cui[d.cui]||0)+w;
+    if(d.band) T.band[d.band]=(T.band[d.band]||0)+w;
+    if(d.reg) T.reg[d.reg]=(T.reg[d.reg]||0)+w;
+    T.kind[d.c]=(T.kind[d.c]||0)+w;
+  });
+  return T;
+}
+function taste(){ if(!S._taste) S._taste=tasteProfile(); return S._taste; }
+function tasteBoost(d){
+  const T=taste(); let b=0;
+  (d.tags||[]).forEach(t=>{ b+=Math.min(T.tags[t]||0, 6)*0.5; });
+  if(d.cui && T.cui[d.cui]) b+=Math.min(T.cui[d.cui], 6)*0.7;
+  if(d.band && T.band[d.band]) b+=Math.min(T.band[d.band], 4)*0.3;
+  if(isFav(d)) b+=6;
+  return Math.min(b, 8);
+}
+/* a compact, human-readable slice of the profile for the wider search */
+function tasteSummary(){
+  const T=taste();
+  const top=(o,n)=>Object.entries(o).sort((a,b)=>b[1]-a[1]).slice(0,n).map(x=>x[0]);
+  if(!T.favNames.length && !top(T.tags,1).length) return null;
+  return { tags:top(T.tags,4), cuisines:top(T.cui,3), bands:top(T.band,2),
+           favourites:T.favNames.slice(0,6) };
+}
+function refreshFavIcon(d){
+  const m=markers.get(d.n);
+  if(!m || !d.lat) return;
+  const ring=d.src==='insta'?'insta ':d.src==='mine'?'mine ':'';
+  m.setIcon(L.divIcon({className:'lm',
+    html:'<div class="mk '+ring+(isFav(d)?'fav':'')+'" data-c="'+d.c+'" style="background:'+css('--'+d.c)+'">'+svg(d.c)+'</div>',
+    iconSize:[26,26], iconAnchor:[13,26]}));
+}
+function refreshFavChip(){
+  const el=document.getElementById('favchip');
+  if(!el) return;
+  el.hidden = S.favs.size===0 && !S.favOnly;
+  el.setAttribute('aria-pressed', S.favOnly?'true':'false');
+  el.innerHTML='♥ Favourites'+(S.favs.size?' <span class="n">'+S.favs.size+'</span>':'');
+}
+async function toggleFav(d, btn){
+  if(SAVE_BROKEN){ sayFail(SAVE_BROKEN); return; }
+  let pass=localStorage.getItem(PASSKEY);
+  if(!pass){ pass=await askPass(); if(!pass) return; }
+  const was=isFav(d);
+  if(btn) btn.disabled=true;
+  let j=await bankCall({action: was?'unfav':'fav', pass, name:d.n});
+  if(j && j.error==='bad_pass'){
+    localStorage.removeItem(PASSKEY);
+    const again=await askPass();
+    if(!again){ if(btn) btn.disabled=false; return; }
+    pass=again; j=await bankCall({action: was?'unfav':'fav', pass, name:d.n});
+  }
+  if(btn) btn.disabled=false;
+  if(!j || !j.ok){ sayFail(j); return; }
+  localStorage.setItem(PASSKEY, pass);
+  S.favs=new Set(j.favs||[]);
+  S._taste=null;
+  refreshFavIcon(d); refreshFavChip();
+  if(btn){ btn.className='btn'+(isFav(d)?' pri':''); btn.textContent=isFav(d)?'♥ Favourited':'♡ Favourite'; }
+  toast(isFav(d) ? '♥ Favourited — your recommendations will learn from this'
+                 : 'Un-favourited');
+  if(!S.plan) render();
+}
 
 /* ============ your own saved places, shared across your devices ============ */
 const PASSKEY='otp:v1:pass';
@@ -3245,9 +3400,14 @@ function refreshSrcChips(){
 async function loadSaved(){
   const j=await bankCall({action:'list'});
   if(j && j.error){ SAVE_BROKEN=j; console.warn('[saved places]', j.error, j.detail||''); return; }
-  if(!j || !j.places || !j.places.length) return;
+  if(!j) return;
   let added=0;
-  j.places.forEach(p=>{ if(p && p.lat && !inBank(p.n)){ addToBoard(p); added++; } });
+  (j.places||[]).forEach(p=>{ if(p && p.lat && !inBank(p.n)){ addToBoard(p); added++; } });
+  if(Array.isArray(j.favs) && j.favs.length){
+    S.favs=new Set(j.favs); S._taste=null;
+    DATA.forEach(d=>{ if(isFav(d)) refreshFavIcon(d); });
+    refreshFavChip();
+  }
   if(added){ refreshSrcChips(); if(!S.plan) render(); }
 }
 /* What Google knows about a place, turned into the bank's own honest fields:
@@ -3703,9 +3863,11 @@ function openDetail(d,fly){
   dbody.scrollTop=0;
 
   const acts=[];
+  acts.push('<button class="btn'+(isFav(d)?' pri':'')+'" id="dfav">'+
+    (isFav(d)?'♥ Favourited':'♡ Favourite')+'</button>');
   if(d.lat){
     const qy=encodeURIComponent(d.n+', '+(d.addr||d.area||'London'));
-    acts.push('<a class="btn pri" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>');
+    acts.push('<a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>');
   }
   {
     const ig=encodeURIComponent(d.n+' london');
@@ -3716,6 +3878,8 @@ function openDetail(d,fly){
     acts.push('<a class="btn" target="_blank" rel="noopener" href="'+d.m[0].u+'">Read the post</a>');
   if(d.src==='mine') acts.push('<button class="btn" id="dunsave">Remove from bank</button>');
   dactions.innerHTML=acts.join('');
+  const fb=document.getElementById('dfav');
+  if(fb) fb.onclick=()=>toggleFav(d, fb);
   const ub=document.getElementById('dunsave');
   if(ub) ub.onclick=()=>unsavePlace(d.n);
 
@@ -3740,25 +3904,53 @@ document.getElementById('dclose').onclick=()=>{detail.classList.remove('open');
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&detail.classList.contains('open'))
   document.getElementById('dclose').click();});
 
-/* swipe the sheet down to dismiss (phones only) */
-(function swipeToClose(){
-  let y0=null, t0=0, dy=0, active=false;
+/* the card answers two gestures: swipe down to dismiss, swipe sideways to
+   move through the current results — left toward the closest, right toward
+   the further-away ones. The sequence is whatever produced this card. */
+function detailSequence(){
+  if(S.plan && S.plan.type==='rows') return (S.plan.rows||[]).filter(d=>d.lat);
+  if(S.plan && S.plan.type==='anchor' && S.plan.anchor)
+    return [S.plan.anchor.d].concat((S.plan.onward||[]).map(o=>o.d));
+  let rows=DATA.filter(match).filter(d=>d.lat);
+  if(S.me) rows=rows.map(d=>({d,km:dist(S.me,[d.lat,d.lng])}))
+                    .sort((a,b)=>a.km-b.km).map(x=>x.d);
+  return rows;
+}
+function detailStep(dir){
+  const seq=detailSequence();
+  const i=seq.findIndex(d=>d.n===S.sel);
+  if(i<0) return false;
+  const nx=seq[i+dir];
+  if(!nx){ toast(dir<0?'That was the nearest one':'That was the last one'); return false; }
+  openDetail(nx, true);
+  return true;
+}
+(function swipeDetail(){
+  let x0=null, y0=null, t0=0, dx=0, dy=0, active=false, axis=null;
   const closeBtn=()=>document.getElementById('dclose');
   const atTop=()=>dbody.scrollTop<=0;
   const start=e=>{
     if(window.innerWidth>860 || !detail.classList.contains('open')) return;
-    const fromGrab=e.target.closest('.grab, .dhd');
-    if(!fromGrab && !atTop()) return;
-    y0=e.touches[0].clientY; t0=Date.now(); dy=0; active=true;
+    if(e.target.closest('.gstrip, .dactions')) return;   // their own horizontal scrolls
+    x0=e.touches[0].clientX; y0=e.touches[0].clientY;
+    t0=Date.now(); dx=0; dy=0; axis=null; active=true;
     detail.classList.add('dragging');
   };
   const move=e=>{
     if(!active) return;
-    dy=e.touches[0].clientY-y0;
-    if(dy<0){ dy=0; }
-    if(dy>0 && (atTop() || e.target.closest('.grab, .dhd'))){
+    dx=e.touches[0].clientX-x0; dy=e.touches[0].clientY-y0;
+    if(!axis && (Math.abs(dx)+Math.abs(dy))>10) axis=Math.abs(dx)>Math.abs(dy)?'h':'v';
+    if(axis==='h'){
       if(e.cancelable) e.preventDefault();
-      detail.style.transform='translateY('+dy+'px)';
+      detail.style.transform='translateX('+(dx*0.55)+'px)';
+      return;
+    }
+    if(axis==='v'){
+      if(dy<0) dy=0;
+      if(dy>0 && (atTop() || e.target.closest('.grab, .dhd'))){
+        if(e.cancelable) e.preventDefault();
+        detail.style.transform='translateY('+dy+'px)';
+      }
     }
   };
   const end=()=>{
@@ -3766,8 +3958,12 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&detail.classList.co
     active=false;
     detail.classList.remove('dragging');
     detail.style.transform='';
-    const fast=(dy/Math.max(Date.now()-t0,1))>0.5;
-    if(dy>110 || (fast && dy>40)) closeBtn().click();
+    const v=Math.max(Math.abs(dx),dy)/Math.max(Date.now()-t0,1);
+    if(axis==='h'){
+      if(Math.abs(dx)>70 || (v>0.5 && Math.abs(dx)>36)) detailStep(dx<0?-1:1);
+      return;
+    }
+    if(dy>110 || (v>0.5 && dy>40)) closeBtn().click();
   };
   detail.addEventListener('touchstart',start,{passive:true});
   detail.addEventListener('touchmove',move,{passive:false});
@@ -3829,6 +4025,9 @@ function homeView(){
 }
 
 /* mobile: filters live behind a button so the map gets the screen */
+document.getElementById('favchip').onclick=()=>{
+  S.favOnly=!S.favOnly; refreshFavChip(); render();
+};
 const fbtn=document.getElementById('fbtn'), fcount=document.getElementById('fcount');
 fbtn.onclick=()=>{
   const open=!document.body.classList.contains('filters-open');
@@ -3864,7 +4063,7 @@ function ensureSheet(){
 }
 
 /* snap points, as the sheet's translateY in vh */
-const SNAPS=[78, 52, 4];     // peek, half, full
+const SNAPS=[82, 52, 4];     // peek, half, full
 let snapIdx=1;
 function applySnap(i, animate=true){
   snapIdx=Math.max(0, Math.min(SNAPS.length-1, i));
@@ -3929,10 +4128,32 @@ if(window.ResizeObserver) new ResizeObserver(setStick).observe(hdEl);
 setStick();
 
 let mobileLayout=null;
+/* the chat shell: on phones, the search lives in the bottom composer and
+   everything administrative (filters, near me, sources, theme) lives behind
+   the menu button. Elements MOVE — ids stay the same, so nothing else cares. */
+const HOMES=new Map();
+const rememberHome=el=>{ if(el && !HOMES.has(el)) HOMES.set(el,{p:el.parentNode,n:el.nextSibling}); };
+const sendHome=el=>{ const h=HOMES.get(el); if(h && el) h.p.insertBefore(el,h.n); };
+function shellLayout(mobile){
+  const sw2=document.getElementById('searchwrap'), nr=document.querySelector('.nearrow'),
+        gs=document.getElementById('geostatus'), fl=document.querySelector('.filters'),
+        pr=document.getElementById('prompts'), ai=document.getElementById('addinsta'),
+        th=document.getElementById('theme');
+  [sw2,nr,gs,fl,pr,ai,th].forEach(rememberHome);
+  if(mobile){
+    document.getElementById('cslot').appendChild(sw2);
+    const m1=document.getElementById('mslot1'); m1.appendChild(nr); m1.appendChild(gs);
+    document.getElementById('mslot2').appendChild(fl);
+    const ma=document.getElementById('mactions'); ma.prepend(th); ma.prepend(ai);
+    document.body.appendChild(pr);
+  } else [sw2,nr,gs,fl,pr,ai,th].forEach(sendHome);
+}
+
 function layout(){
   const mobile=window.innerWidth<=860;
   if(mobile===mobileLayout) return;
   mobileLayout=mobile;
+  shellLayout(mobile);
   if(mobile){
     ensureSheet();
     panel.insertBefore(mapwrap, sheet);
@@ -3950,6 +4171,28 @@ function showMap(){
   if(snapIdx>0) applySnap(0);          // drop the sheet out of the way
 }
 layout();
+/* menu + new-chat + keyboard riding */
+(function shellWiring(){
+  const mw=document.getElementById('menuwrap');
+  document.getElementById('menufab').onclick=()=>{
+    const mc=document.getElementById('mcount'); if(mc) mc.textContent=DATA.length;
+    mw.hidden=false;
+  };
+  mw.onclick=e=>{ if(e.target===mw) mw.hidden=true; };
+  document.getElementById('newchat').onclick=()=>{
+    clearPlan(); q.value=''; S.q=''; sw.classList.remove('has');
+    toast('Fresh start — ask away'); q.focus();
+  };
+  if(window.visualViewport){
+    const vv=window.visualViewport;
+    const upd=()=>{
+      if(window.innerWidth>860){ document.documentElement.style.setProperty('--kb','0px'); return; }
+      const kb=Math.max(0, window.innerHeight-(vv.height+vv.offsetTop));
+      document.documentElement.style.setProperty('--kb', (-kb)+'px');
+    };
+    vv.addEventListener('resize',upd); vv.addEventListener('scroll',upd);
+  }
+})();
 let rz; window.addEventListener('resize',()=>{
   clearTimeout(rz); rz=setTimeout(()=>{ layout(); setStick(); map.invalidateSize(); }, 150);
 });
