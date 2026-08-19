@@ -911,6 +911,14 @@ body.detail-open .mobtab{display:none}
 .evdate b{display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em}
 .evdate span{display:block; font-size:10.5px; color:var(--ink-3); margin-top:1px}
 .card.ev .savebtn.evgo{text-decoration:none; display:inline-flex; align-items:center}
+/* the card's own next step: what's near this, from your bank */
+.afterby{margin:2px 0 14px}
+.afterby h4{margin:0 0 7px; font-size:11.5px; font-weight:650; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--ink-3)}
+.aftbtn{display:flex; justify-content:space-between; align-items:center; gap:10px; width:100%;
+  text-align:left; padding:8px 11px; margin:0 0 6px; border:1px solid var(--line);
+  border-radius:10px; background:var(--surface-2); color:var(--ink); font-size:13.5px; cursor:pointer}
+.aftbtn span{color:var(--ink-3); font-size:12px; flex:none}
 .loadingrow{padding:12px 16px; font-size:12.5px; color:var(--ink-3)}
 
 /* the plan */
@@ -1155,6 +1163,11 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .hd{display:none}
   .app .mapwrap{top:0 !important}
   .leaflet-control-zoom{display:none}
+  /* locate button rides bottom-right, clear of the composer; steps aside for
+     the place card, which owns that corner while it is open */
+  .leaflet-bottom.leaflet-right{bottom:calc(84px + env(safe-area-inset-bottom))}
+  .leaflet-bottom.leaflet-right .locbtn{margin:0 12px 12px 0}
+  body.detail-open .locbtn{display:none}
   .menufab{
     display:grid; position:fixed; top:calc(10px + env(safe-area-inset-top)); left:10px;
     z-index:35; width:40px; height:40px; border-radius:50%; border:1px solid var(--line);
@@ -1902,7 +1915,9 @@ function startFix(fromTap){
       : 'Could not get a location fix.');
   }, {enableHighAccuracy:true, maximumAge:15000});
 }
-const locCtl=L.control({position:'topright'});
+/* thumbs live at the bottom of a phone: the locate button goes bottom-right,
+   lifted above the composer. Desktop keeps it top-right. */
+const locCtl=L.control({position: window.innerWidth<=860 ? 'bottomright' : 'topright'});
 locCtl.onAdd=()=>{
   const b=L.DomUtil.create('button','locbtn');
   b.type='button'; b.title='My location'; b.setAttribute('aria-label','My location');
@@ -1912,6 +1927,27 @@ locCtl.onAdd=()=>{
   return b;
 };
 locCtl.addTo(map);
+/* the page's own pinch/double-tap zoom is locked (Safari fix), which can eat
+   the map's double-tap too. So the map answers double-tap itself: two taps,
+   close together, zoom in around that exact spot. */
+(function dblTapZoom(){
+  if(!('ontouchstart' in window)) return;
+  map.doubleClickZoom.disable();                    // ours replaces it: never fire twice
+  const el=map.getContainer();
+  let lt=0, lx=0, ly=0;
+  el.addEventListener('touchend',e=>{
+    if(e.touches.length) return;                    // a pinch, not a tap
+    const t=e.changedTouches[0]; if(!t) return;
+    const now=Date.now();
+    if(now-lt<350 && Math.abs(t.clientX-lx)<30 && Math.abs(t.clientY-ly)<30){
+      lt=0;
+      if(e.cancelable) e.preventDefault();          // don't also fire a synthetic dblclick
+      const r=el.getBoundingClientRect();
+      map.setZoomAround(L.point(t.clientX-r.left, t.clientY-r.top),
+        Math.min(Math.floor(map.getZoom())+1, map.getMaxZoom()));
+    } else { lt=now; lx=t.clientX; ly=t.clientY; }
+  },{passive:false});
+})();
 /* allowed on a previous visit: the dot simply appears, no prompt */
 if(navigator.permissions && navigator.permissions.query)
   navigator.permissions.query({name:'geolocation'})
@@ -2796,10 +2832,24 @@ function sugCard(p){
     (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
   const saved=inBank(p.name);
   const b=document.createElement('button');
-  b.className='savebtn'+(saved?' done':'');
-  b.textContent=saved?'In your bank':'Save';
-  b.disabled=saved;
-  b.onclick=e=>{ e.stopPropagation(); savePlace(p,b); };
+  if(saved){
+    /* already yours: the button is the NEXT action — favourite it here, now,
+       not a dead "In your bank" you have to walk away from */
+    const rec=DATA.find(x=>slugOf(x.n)===slugOf(p.name));
+    b.className='savebtn done';
+    b.textContent=(rec&&isFav(rec))?'♥ Favourited':'♡ Favourite';
+    b.onclick=async e=>{
+      e.stopPropagation();
+      if(!rec) return;
+      await toggleFav(rec, b);
+      b.className='savebtn done';
+      b.textContent=isFav(rec)?'♥ Favourited':'♡ Favourite';
+    };
+  } else {
+    b.className='savebtn';
+    b.textContent='Save';
+    b.onclick=e=>{ e.stopPropagation(); savePlace(p,b); };
+  }
   el.appendChild(b);
   el.onclick=()=>openSuggestion(p);
   return el;
@@ -2826,7 +2876,8 @@ function openSuggestion(p){
   const qy=encodeURIComponent(p.name+', '+(p.address||p.area||'London'));
   const already=inBank(p.name);
   dactions.innerHTML='<a class="btn pri" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>'+
-    '<a class="btn" target="_blank" rel="noopener" href="https://www.instagram.com/explore/search/keyword/?q='+encodeURIComponent(p.name+' london')+'">Instagram</a>'+
+    /* no Instagram button here: we don't hold these venues' accounts, and a
+       keyword search that lands on the explore page helps nobody */
     '<button class="btn" id="dsave"'+(already?' disabled':'')+'>'+
       (already?'In your bank':'Save to my bank')+'</button>';
   const sb=document.getElementById('dsave');
@@ -3078,7 +3129,20 @@ function match(d){
 /* ---------------- render ---------------- */
 const listEl=document.getElementById('list'), countEl=document.getElementById('count');
 
+/* the input never wastes its words: at rest it invites, mid-conversation it
+   teaches the follow-up moves — the box itself says what the app can do next */
+function setPromptHint(){
+  if(!q) return;
+  if(S.plan && (S.plan.type==='rows'||S.plan.type==='anchor'))
+    q.placeholder='Follow up — “cheaper”, “another”, “in soho instead”…';
+  else if(S.plan && S.plan.type==='events')
+    q.placeholder='“what’s on tonight”? Or switch back to food and drinks…';
+  else if(S.plan && S.plan.type==='thinking')
+    q.placeholder='Reading that…';
+  else q.placeholder='Ask me where to go…';
+}
 function render(){
+  setPromptHint();
   document.body.classList.toggle('thinking', !!(S.plan && S.plan.type==='thinking'));
   /* at rest the phone shows map + composer only; the list is opt-in via ⋯ */
   document.body.classList.toggle('home', window.innerWidth<=860 && !S.plan && !S.browse);
@@ -3302,6 +3366,7 @@ function planView(r){
 }
 
 function renderPlan(){
+  setPromptHint();
   const p=S.plan;
   /* Re-renders of the SAME plan (opening hours arriving, ranks settling) must
      not yank the sheet back to half or throw the scroll to the top — that is
@@ -3738,7 +3803,20 @@ async function savePlace(p, btn){
     localStorage.setItem(PASSKEY, pass);
     if(!inBank(j.saved.n)) addToBoard(j.saved);
     refreshSrcChips();
-    if(btn){ btn.className='savebtn done'; btn.textContent='In your bank'; btn.disabled=true; }
+    /* the moment it lands in the bank, the button becomes the NEXT action:
+       favourite it now, not after finding it again later */
+    if(btn){
+      const rec=DATA.find(x=>slugOf(x.n)===slugOf(j.saved.n)) || j.saved;
+      btn.classList.add('done'); btn.disabled=false;
+      btn.textContent='♡ Favourite';
+      const keep=btn.className;
+      btn.onclick=async e=>{
+        e.stopPropagation();
+        await toggleFav(rec, btn);
+        btn.className=keep;
+        btn.textContent=isFav(rec)?'♥ Favourited':'♡ Favourite';
+      };
+    }
     const learned=[en.band, en.cui].concat(en.tags.filter(t=>t!=='cheap'&&t!=='free'))
       .filter(Boolean).slice(0,3).join(' · ');
     toast('“'+j.saved.n+'” added to your bank'+(learned?' — '+learned:''));
@@ -4083,6 +4161,25 @@ function openState(name, when){
 const detail=document.getElementById('detail'), dname=document.getElementById('dname'),
       dbody=document.getElementById('dbody'), dactions=document.getElementById('dactions');
 
+/* the intuitive next step, right on the card: looking at food? here are the
+   drinks within a short walk of it, and the other way round. One tap deep,
+   straight from your own bank, zero model calls. */
+function afterHtml(d){
+  if(!d.lat) return '';
+  const want = d.c==='eat' ? ['drink','coffee'] : d.c==='drink' ? ['eat'] :
+               d.c==='coffee' ? ['eat','culture'] : ['eat','drink'];
+  const near=DATA.filter(x=>x.lat && x.n!==d.n && want.includes(x.c))
+    .map(x=>({x, km:dist([d.lat,d.lng],[x.lat,x.lng])}))
+    .filter(o=>o.km<=0.9).sort((a,b)=>a.km-b.km).slice(0,3);
+  if(!near.length) return '';
+  const label = d.c==='eat' ? 'Drinks after, within a walk'
+              : d.c==='drink' ? 'Food near this'
+              : 'Close by, from your bank';
+  return '<div class="afterby"><h4>'+esc(label)+'</h4>'+near.map(o=>
+    '<button class="aftbtn" data-i="'+DATA.indexOf(o.x)+'">'+esc(o.x.n)+
+    '<span>'+esc([o.x.hood||o.x.area, fmtDist(o.km)].filter(Boolean).join(' · '))+'</span></button>').join('')+
+    '</div>';
+}
 function openDetail(d,fly){
   S.sel=d.n;
   dname.textContent=d.n;
@@ -4118,8 +4215,15 @@ function openDetail(d,fly){
   else if(d.conf==='low') notes.push('Approximate pin: the right street or area, but not confirmed to the door.');
   if(d.aka&&d.aka.length) notes.push('Also written as: '+d.aka.join(', ')+'.');
   if(notes.length) h+='<p class="note">'+notes.map(esc).join('<br>')+'</p>';
+  h+=afterHtml(d);
   dbody.innerHTML=h;
   dbody.scrollTop=0;
+  dbody.querySelectorAll('.aftbtn').forEach(b=>b.onclick=()=>{
+    const d2=DATA[+b.dataset.i];
+    if(!d2) return;
+    openDetail(d2,false);
+    if(d2.lat) setTimeout(()=>{ map.invalidateSize(); focusPin(d2.lat,d2.lng); }, 120);
+  });
 
   const acts=[];
   acts.push('<button class="btn'+(isFav(d)?' pri':'')+'" id="dfav">'+
@@ -4128,11 +4232,11 @@ function openDetail(d,fly){
     const qy=encodeURIComponent(d.n+', '+(d.addr||d.area||'London'));
     acts.push('<a class="btn" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query='+qy+'">Open in Maps</a>');
   }
-  {
-    const ig=encodeURIComponent(d.n+' london');
+  /* Instagram only when we actually HOLD the venue's account — a keyword
+     search that dumps you on the explore page is worse than no button */
+  if(d.ig)
     acts.push('<a class="btn" target="_blank" rel="noopener" '+
-      'href="https://www.instagram.com/explore/search/keyword/?q='+ig+'">Instagram</a>');
-  }
+      'href="https://www.instagram.com/'+esc(String(d.ig).replace(/^@/,''))+'/">Instagram</a>');
   if(d.m[0] && d.m[0].u)
     acts.push('<a class="btn" target="_blank" rel="noopener" href="'+d.m[0].u+'">Read the post</a>');
   if(d.src==='mine') acts.push('<button class="btn" id="dunsave">Remove from bank</button>');

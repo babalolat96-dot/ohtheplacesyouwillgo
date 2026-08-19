@@ -51,6 +51,10 @@ function clean(p) {
     src: isInsta ? 'insta' : 'mine', cui: s(p.cui, 40),
     band: BANDS.includes(p.band) ? p.band : null,
     rat: p.rat != null ? String(p.rat).slice(0, 4) : (p.rating != null ? String(p.rating).slice(0, 4) : null),
+    // the venue's own Instagram handle, when an import actually captured one —
+    // this is what makes the card's Instagram button honest instead of a search
+    ig: /^[a-z0-9._]{1,30}$/i.test(String(p.ig || '').replace(/^@/, ''))
+      ? String(p.ig).replace(/^@/, '').toLowerCase() : null,
     gid: s(p.gid || p.id, 200),
     savedAt: Date.now(),
   };
