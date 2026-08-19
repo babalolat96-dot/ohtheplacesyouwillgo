@@ -902,6 +902,15 @@ body.detail-open .mobtab{display:none}
 .card.sug .pin svg{fill:var(--ink-3)}
 .mk.sug{background:var(--surface) !important; border:2px dashed var(--ink-3)}
 .mk.sug svg{fill:var(--ink-3)}
+/* events get their own pin colour — a night, not a place in the bank */
+.mk.ev{background:#7b5cd6 !important}
+.mk.ev svg{fill:#fff}
+.card.ev{align-items:flex-start}
+.evdate{flex:none; width:46px; text-align:center; padding:6px 0; border:1px solid var(--line);
+  border-radius:10px; background:var(--surface-2)}
+.evdate b{display:block; font-size:12px; text-transform:uppercase; letter-spacing:.04em}
+.evdate span{display:block; font-size:10.5px; color:var(--ink-3); margin-top:1px}
+.card.ev .savebtn.evgo{text-decoration:none; display:inline-flex; align-items:center}
 .loadingrow{padding:12px 16px; font-size:12.5px; color:var(--ink-3)}
 
 /* the plan */
@@ -1781,6 +1790,7 @@ document.getElementById('sendq').onclick=()=>{ if(askable()) ask(q.value.trim())
 /* example asks, so it is obvious what this thing can do */
 const PROMPTS=[
   'drinks near me',
+  "what's on this weekend?",
   'date night: food then cheap drinks',
   'a whimsical day in Walthamstow',
   'cheap eats in Peckham',
@@ -1944,6 +1954,9 @@ const NEARME=/\b(near me|close by|nearby|around here|round here|near by)\b/;
    rank by distance, badge what is open. Never let it fall through to a
    rating-sorted list of favourites on the other side of town. */
 const OPENNOW=/\b(open (now|late|rn|right now|tonight|at this (time|hour))|still (open|serving)|(anywhere|anything|any\w* (bars?|pubs?|spots?|places?)) (still )?open|what'?s (still )?open|wh(?:at|ere)('s| is) (still )?open|(is|are) (still )?open)\b/;
+/* the outside layer: nights, gigs, festivals. "party of 6" is a table size,
+   "parties" is a Saturday — the regex is deliberately noun-plural about it */
+const EVENTWORDS=/\b(what'?s (on|happening|going on)|whats (on|happening)|any events?|events? (on|near|tonight|this|next|around)|gigs?|raves?|club nights?|parties|lineups?|line-ups?|festivals?|anything (happening|going on))\b/;
 const BANDORDER=['£','££','£££','££££'];
 
 function findPlaces(t){
@@ -2012,6 +2025,16 @@ function parseLocal(text){
   if(rt) return {routeId:rt.id, stops:[], venues:[], locations:[],
     useMyLocation:false, between:false, party:null,
     reply:null, via:'built in', wantsAfter:true, _strong:true};
+  /* an events ask is its own thing: it reads the feed, not the bank */
+  if(EVENTWORDS.test(t)){
+    const evPlaces=findPlaces(t);
+    return {eventsAsk:true, stops:[], venues:[], locations:evPlaces.map(p=>p.name),
+      useMyLocation:NEARME.test(t)||!evPlaces.length, explicitNear:NEARME.test(t),
+      between:false, party:null, openNow:false,
+      evWhen:/\btonight\b|\bthis evening\b|\btoday\b/.test(t)?'tonight'
+            :/\bweekend\b/.test(t)?'weekend':'all',
+      reply:null, via:'built in', wantsAfter:false, _strong:true};
+  }
   const segs=t.split(/\bthen\b|\bfollowed by\b|\bafter that\b/).map(x=>x.trim()).filter(Boolean);
   const stops=[];
   segs.forEach(seg=>{
@@ -2467,6 +2490,41 @@ function runPlan(plan){
       {enableHighAccuracy:true, timeout:8000, maximumAge:120000});
     return hold;
   }
+  /* -------- events: the outside layer reads the feed, not the bank -------- */
+  if(plan.eventsAsk){
+    const origin=planOrigin(plan);
+    const now=Date.now();
+    let evs=EVENTS.filter(e=>Date.parse(e.start)>=now-6*3600e3);
+    if(plan.evWhen==='tonight'){
+      const end=new Date(); end.setHours(29,59,59,0);           // tonight runs past midnight
+      evs=evs.filter(e=>Date.parse(e.start)<=+end);
+    } else if(plan.evWhen==='weekend'){
+      const d=new Date(), day=d.getDay();
+      const fri=new Date(d); fri.setDate(d.getDate()+((5-day+7)%7)); fri.setHours(0,0,0,0);
+      if(day===6||day===0) fri.setDate(fri.getDate()-7);        // already inside the weekend
+      const sun=new Date(fri); sun.setDate(fri.getDate()+2); sun.setHours(29,59,59,0);
+      evs=evs.filter(e=>{const s0=Date.parse(e.start); return s0>=+fri && s0<=+sun;});
+    } else evs=evs.filter(e=>Date.parse(e.start)<=now+14*86400e3);
+    if(origin) evs.sort((a,b)=>{
+      const da=a.lat?dist(origin.pt,[a.lat,a.lng]):99, db=b.lat?dist(origin.pt,[b.lat,b.lng]):99;
+      return (da-db)||(Date.parse(a.start)-Date.parse(b.start));
+    });
+    const label=plan.evWhen==='tonight'?'tonight':plan.evWhen==='weekend'?'this weekend':'in the next two weeks';
+    if(!plan.reply) plan.reply=evs.length
+      ? evs.length+' event'+(evs.length>1?'s':'')+' '+label+(origin?' — nearest to '+origin.label+' first':' — soonest first')
+      : EVENTS.length
+        ? 'Nothing in the feed '+label+'. It holds '+EVENTS.length+' upcoming — ask “what’s on” for all of them.'
+        : 'The events feed is empty — the weekly scout hasn’t filled it yet.';
+    const result={type:'events', rows:evs.slice(0,30), origin, plan};
+    S.plan=result; S.planWhen=null;
+    if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
+    render();
+    drawRoute(null); drawSugMarkers([]); drawEventMarkers(result.rows);
+    const pts=result.rows.filter(e=>e.lat).slice(0,16).map(e=>[e.lat,e.lng]);
+    if(origin) pts.push(origin.pt);
+    if(pts.length) map.flyToBounds(L.latLngBounds(pts),{padding:[45,45],maxZoom:14,duration:.8});
+    return result;
+  }
   if(plan.routeId){
     const rt=ROUTES.find(x=>x.id===plan.routeId);
     if(rt && !plan.reply) plan.reply='“'+rt.title+'” — '+rt.brief;
@@ -2557,10 +2615,76 @@ async function applyHours(result){
   const score=d=>{ const st=openState(d.n, when); return st===null?1:(st.open?0:2); };
   result.rows=result.rows.slice().sort((a,b)=>score(a)-score(b));
   result.shutCount=rows.filter(d=>{const st=openState(d.n,when); return st&&!st.open;}).length;
+  /* an "open now" ask answers like a person once the hours are in. Never
+     present a list at 2am that quietly implies everything on it is open —
+     if it's all shut, SAY it's all shut, and name what would have been the
+     call. Honesty beats a confident-looking list that dies on first tap. */
+  if(result.plan && result.plan.openNow){
+    const known=result.rows.map(d=>({d, st:openState(d.n, when)})).filter(x=>x.st);
+    const open=known.filter(x=>x.st.open), shut=known.filter(x=>!x.st.open);
+    const kmTo=d=>(S.me&&d.lat)?fmtDist(dist(S.me,[d.lat,d.lng]))+' away':null;
+    if(open.length){
+      const f=open[0];
+      result.plan.reply=(open.length===1?'One place':open.length+' places')+' near you '
+        +(open.length===1?'looks':'look')+' open right now — '+f.d.n
+        +(kmTo(f.d)?', '+kmTo(f.d):'')
+        +(f.st.closingAt?', open until '+hhmm(f.st.closingAt):'')+'.';
+      if(shut.length) result.plan.reply+=' The rest further down are shut at this hour.';
+    } else if(shut.length){
+      const c=shut[0];
+      result.plan.reply='Straight with you — nothing near you looks open right now. '
+        +'The closest would be '+c.d.n+(c.d.hood||c.d.area?' in '+(c.d.hood||c.d.area):'')
+        +(kmTo(c.d)?' ('+kmTo(c.d)+')':'')+', but they\'re shut at this hour too.';
+      result.allShut=true;
+    }
+  }
   render();
 }
 
-function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); }
+function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); }
+
+/* ---- the outside layer: the events feed, scouted weekly ---- */
+let EVENTS=[], EVENTS_META=null;
+async function loadEvents(){
+  try{
+    const r=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'list'})});
+    const d=await r.json();
+    if(d && Array.isArray(d.events)){ EVENTS=d.events; EVENTS_META={count:d.count, refreshedAt:d.refreshedAt}; }
+  }catch(e){ /* offline or not deployed yet: the ask answers honestly */ }
+}
+let evLayer=null;
+function drawEventMarkers(list){
+  if(evLayer){ map.removeLayer(evLayer); evLayer=null; }
+  const pts=(list||[]).filter(e=>e.lat);
+  if(!pts.length) return;
+  evLayer=L.layerGroup(pts.map(e=>{
+    const m=L.marker([e.lat,e.lng],{icon:L.divIcon({className:'lm',
+      html:'<div class="mk ev">'+svg('culture')+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
+      title:e.title});
+    m.on('click',()=>{ if(e.url) window.open(e.url,'_blank','noopener'); });
+    return m;
+  })).addTo(map);
+}
+function evCard(e, origin){
+  const el=document.createElement('div');
+  el.className='card ev'; el.tabIndex=0;
+  const d=new Date(e.start);
+  const wd=d.toLocaleDateString('en-GB',{weekday:'short'});
+  const dm=d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  const tm=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  const km=(origin&&e.lat)?fmtDist(dist(origin.pt,[e.lat,e.lng]))+' away':null;
+  el.innerHTML='<div class="evdate"><b>'+esc(wd)+'</b><span>'+esc(dm)+'</span></div>'+
+    '<div style="min-width:0;flex:1"><h3>'+esc(e.title)+'</h3>'+
+    '<p class="meta">'+esc([e.venue, e.area, tm, km].filter(Boolean).join(' · '))+'</p>'+
+    (e.why?'<p class="snip">'+esc(e.why)+'</p>':'')+
+    '<div class="tagrow">'+(e.genres||[]).slice(0,3).map(g=>'<span class="tag">'+esc(g)+'</span>').join('')+
+    (e.src?'<span class="tag">via '+esc(e.src)+'</span>':'')+'</div></div>'+
+    (e.url?'<a class="savebtn evgo" target="_blank" rel="noopener" href="'+esc(e.url)+'">Tickets</a>':'');
+  const a=el.querySelector('.evgo'); if(a) a.onclick=ev=>ev.stopPropagation();
+  el.onclick=()=>{ if(e.lat) focusPin(e.lat,e.lng); else if(e.url) window.open(e.url,'_blank','noopener'); };
+  return el;
+}
 
 /* ---- second tier: places the model knows, verified before they appear ---- */
 let sugLayer=null;
@@ -2636,6 +2760,10 @@ async function fetchSuggestions(text, known, auto){
         if(S.plan && S.plan.plan && S.plan.plan.openNow){
           const sc=p=>{ const st=openState(p.name); return st===null?1:(st.open?0:2); };
           mine.places=mine.places.slice().sort((a,b)=>sc(a)-sc(b));
+          /* honesty carries into the discoveries: if these are all shut too,
+             say so at the top instead of letting the cards imply otherwise */
+          const sts=mine.places.map(p=>openState(p.name)).filter(Boolean);
+          mine.allShut = sts.length>0 && sts.every(st=>!st.open);
         }
         drawSugMarkers(mine.places); renderPlan();
       });
@@ -2645,6 +2773,7 @@ async function fetchSuggestions(text, known, auto){
    around the ask → look beyond it unprompted (an unfamiliar area is an
    opportunity for discovery, not a dead end); rich bank → offer the button. */
 function chaseThin(plan, res, textOverride){
+  if(plan && plan.eventsAsk) return;            // the feed answers events, not the bank
   if(res && res._locPending) return;            // still finding them: decided after the fix
   const known=(res&&res.type==='rows'?res.rows:[]).slice(0,20).map(d=>d.n);
   const text=textOverride||(plan&&plan.asked)||'somewhere good nearby';
@@ -2843,7 +2972,7 @@ async function ask(text, fresh){
     const asNew=parseLocal(text);
     if(asNew && asNew._strong &&
        ((asNew.locations&&asNew.locations.length) || (asNew.venues&&asNew.venues.length)
-        || asNew.routeId || asNew.openNow)){
+        || asNew.routeId || asNew.openNow || asNew.eventsAsk)){
       prevPlan=null; fresh=true;
     }
   }
@@ -3069,7 +3198,8 @@ function renderSuggestions(){
   head.innerHTML='Not in your bank <span class="badge">'+sg.places.length+' suggested</span>';
   listEl.appendChild(head);
   listEl.insertAdjacentHTML('beforeend',
-    '<div class="secnote">'+(sg.auto?'Your bank is thin for this one, so the wider search ran on its own. ':'')+
+    '<div class="secnote">'+(sg.allShut?'Honestly? These look shut right now too — they\'re here for next time. ':'')+
+    (sg.auto?'Your bank is thin for this one, so the wider search ran on its own. ':'')+
     'The model put these forward and each address was checked against the '+
     'UK food hygiene register. Nobody you trust has vouched for them.</div>');
   const f=document.createDocumentFragment();
@@ -3192,6 +3322,26 @@ function renderPlan(){
     f.innerHTML='<div class="pb">'+esc(p.asked)+'</div><button id="clearplan">clear</button>';
     setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
     listEl.prepend(f);
+    return;
+  }
+  if(p.type==='events'){
+    countEl.textContent=p.rows.length?p.rows.length+' events':'no events';
+    cluster.clearLayers();                    // events live on their own layer
+    listEl.appendChild(planBar(p));
+    if(!p.rows.length){
+      listEl.insertAdjacentHTML('beforeend','<div class="empty">'+
+        (EVENTS.length
+          ? 'Nothing in that window.<br>Try “what’s on” with no day for the full fortnight.'
+          : 'The feed fills weekly from orixa.fm and the editorial list.<br>Nothing has been scouted yet.')+'</div>');
+    }
+    const frag=document.createDocumentFragment();
+    p.rows.forEach(e=>frag.appendChild(evCard(e, p.origin)));
+    listEl.appendChild(frag);
+    if(EVENTS_META && EVENTS_META.refreshedAt)
+      listEl.insertAdjacentHTML('beforeend','<div class="foot"><p style="margin:0">Scouted weekly — last refreshed '+
+        esc(new Date(EVENTS_META.refreshedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}))+'.</p></div>');
+    if(!again && typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
+    if(again) listEl.scrollTop=keep;
     return;
   }
   const items = p.type==='anchor' ? (p.anchor?[p.anchor]:[]) : p.rows;
@@ -4317,6 +4467,7 @@ drawPrompts();
 homeView();
 locate(true);
 loadSaved();          // whatever you saved on any device
+loadEvents();         // what's on — scouted weekly into the feed
 </script>
 </body>
 </html>
