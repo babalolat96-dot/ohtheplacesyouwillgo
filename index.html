@@ -1181,6 +1181,9 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   }
   .prompts::-webkit-scrollbar{display:none}
   .prompts button{flex:none; white-space:nowrap}
+  /* once a card or a conversation is up, the starter chips are clutter —
+     they were sitting on top of the card's Maps/Instagram buttons */
+  body.detail-open .prompts{display:none}
   /* the reply is a chat bubble at the top of the sheet, orb as its avatar */
   .planbar{
     margin:6px 12px 4px; border:1px solid var(--line); border-radius:16px 16px 16px 5px;
@@ -1229,6 +1232,13 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   /* a place is a card over the map, not a page you leave — while it is open,
      the header and sheet step aside so the map gets the whole screen */
   body.detail-open .sheet{transform:translateY(102%) !important}
+  /* chat interface first: at rest there is NO list sheet — the map with your
+     pins already IS the bank. The sheet only exists once a conversation
+     starts; the full A–Z list lives behind the ⋯ menu. */
+  body.home .sheet{display:none}
+  .mbrowse{display:block; width:100%; text-align:left; margin:2px 0 4px;
+    padding:11px 13px; border:1px solid var(--line); border-radius:12px;
+    background:var(--surface-2); color:var(--ink); font-size:14px; cursor:pointer}
   body.detail-open .hd, body.detail-open .filters{display:none}
   body.detail-open .app .mapwrap{top:0}
   .gstrip img{height:170px}
@@ -1359,6 +1369,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
       <div class="menu">
         <div class="mhead"><b>Oh the places you will go</b>
           <span class="msub"><span id="mcount"></span> London spots · <a href="https://sowhatsthesitch.substack.com" target="_blank" rel="noopener">so what's the sitch</a> + Olaloye's list</span></div>
+        <button class="mbrowse" id="browseall" type="button">Browse all places A–Z</button>
         <div id="mslot1"></div>
         <div id="mslot2"></div>
         <div class="mrow" id="mactions"><span class="msub" style="align-self:center">Add from Instagram · theme</span></div>
@@ -1928,6 +1939,11 @@ const CHEAP=/\b(cheap|cheaply|budget|tenner|affordable|inexpensive|under £?\d+)
 const FANCY=/\b(fancy|nice|posh|splash|treat|special|blow out|blowout)\b/;
 const BETWEEN=/\b(in the middle|halfway|half way|between|meet in the middle|midway)\b/;
 const NEARME=/\b(near me|close by|nearby|around here|round here|near by)\b/;
+/* "anywhere still open for drinks?" is an in-the-moment ask, not a plan.
+   It reads as a question, but it is one the app can answer itself: locate,
+   rank by distance, badge what is open. Never let it fall through to a
+   rating-sorted list of favourites on the other side of town. */
+const OPENNOW=/\b(open (now|late|rn|right now|tonight|at this (time|hour))|still (open|serving)|(anywhere|anything|any\w* (bars?|pubs?|spots?|places?)) (still )?open|what'?s (still )?open|wh(?:at|ere)('s| is) (still )?open|(is|are) (still )?open)\b/;
 const BANDORDER=['£','££','£££','££££'];
 
 function findPlaces(t){
@@ -2015,6 +2031,11 @@ function parseLocal(text){
     if(kind||tags.length||cuisines.length) stops.push({kind:kind||'any', cuisines, tags,
       maxBand: CHEAP.test(t)?'£':FANCY.test(t)?'£££':null});
   }
+  const openAsk=OPENNOW.test(t);
+  /* "anywhere open?" with no kind named still deserves an answer: any kind,
+     whatever is nearest and open */
+  if(!stops.length && openAsk)
+    stops.push({kind:'any', cuisines:[], tags:[], maxBand:CHEAP.test(t)?'£':null});
   if(!stops.length) return null;
   const places=findPlaces(t);
   const vm=t.match(/\b(?:at|from|leaving|outside|by)\s+([a-z0-9'’&\- ]{3,30}?)(?:\s*[,.]|\s+(?:and|then|i|we|need|want|for|after|now)\b|$)/);
@@ -2026,19 +2047,26 @@ function parseLocal(text){
     locations: places.map(p=>p.name),
     between: BETWEEN.test(t) && places.length>=2,
     useMyLocation: NEARME.test(t) || (!places.length && !venues.length),
+    /* NEARME said out loud is the licence to ask the phone for a fix;
+       "what's open" implies it just as strongly */
+    explicitNear: NEARME.test(t),
+    openNow: openAsk,
     party: partyFrom(t) || (/\bfor two\b|\bthe two of us\b/.test(t) ? 2 : null),
     reply: null, via:'built in',
   };
   /* is this an occasion being planned, or one thing needed right now? */
-  plan.wantsAfter = stops.length>=2 || PLANWORDS.test(t);
-  const confident = stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)) || places.length>0 || venues.length>0;
+  plan.wantsAfter = !openAsk && (stops.length>=2 || PLANWORDS.test(t));
+  const confident = openAsk
+    || stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)) || places.length>0 || venues.length>0;
   /* strong enough that asking the model would only confirm what we already read.
      Every model call costs a serverless invocation, so we skip the ones we
-     do not need rather than asking twice for the same answer. */
-  plan._strong = confident
+     do not need rather than asking twice for the same answer. An "open now"
+     ask is strong even phrased as a question — it IS a question, one this
+     side of the wire can answer. */
+  plan._strong = openAsk || (confident
     && stops.every(x=>x.kind!=='any' || (x.cuisines&&x.cuisines.length))
     && (places.length>0 || venues.length>0 || NEARME.test(t))
-    && !/\?|\b(what|which|where should|any ideas|suggest|recommend|help me)\b/.test(t);
+    && !/\?|\b(what|which|where should|any ideas|suggest|recommend|help me)\b/.test(t));
   return confident ? plan : null;
 }
 const PLANWORDS=/\b(date|night out|take (her|him|them)|for after|after(wards)?|options for|plan|planning|evening|going out|day out)\b/;
@@ -2408,7 +2436,11 @@ function bankThin(res){
   const rows=res.rows||[];
   if(!rows.length) return true;
   if(res.origin){
-    const r=Math.max(res.rad||0, 3);
+    /* an in-the-moment ask is about what is genuinely CLOSE: judge the bank
+       at walking distance, not at whatever radius the ranking widened to —
+       otherwise standing in an unfamiliar area never triggers discovery */
+    const now=res.plan && (res.plan.openNow || res.plan.explicitNear);
+    const r=now ? 3 : Math.max(res.rad||0, 3);
     return rows.filter(d=>d.lat && dist(res.origin.pt,[d.lat,d.lng])<=r).length<8;
   }
   return rows.length<6;
@@ -2416,6 +2448,25 @@ function bankThin(res){
 
 function runPlan(plan){
   plan._reg=regionFrom(plan);
+  /* "near me" or "what's open" with no fix yet: get one FIRST, then answer.
+     Being in Northolt and told about Soho was exactly this hole — the ask
+     was anchored to nothing, so favourites won on rating. */
+  if(plan.useMyLocation && !S.me && !plan._locTried
+     && (plan.openNow || plan.explicitNear) && navigator.geolocation){
+    plan._locTried=true;
+    const hold={type:'rows', rows:[], origin:null, widened:false, _locPending:true,
+      plan:Object.assign({}, plan, {reply:'Finding where you are first…'})};
+    S.plan=hold; render();
+    navigator.geolocation.getCurrentPosition(
+      p=>{ setOrigin([p.coords.latitude,p.coords.longitude],'your location');
+           startFix(false);
+           chaseThin(plan, runPlan(plan)); },
+      ()=>{ if(!plan.reply) plan.reply='I could not get a location fix, so this is not sorted by '+
+              'distance. Tell me an area — “near northolt” — and I will anchor there.';
+            chaseThin(plan, runPlan(plan)); },
+      {enableHighAccuracy:true, timeout:8000, maximumAge:120000});
+    return hold;
+  }
   if(plan.routeId){
     const rt=ROUTES.find(x=>x.id===plan.routeId);
     if(rt && !plan.reply) plan.reply='“'+rt.title+'” — '+rt.brief;
@@ -2459,6 +2510,8 @@ function runPlan(plan){
   } else {
     result={type:'rows', rows:rank(stopMatches(stops[0]).filter(inRegion)).slice(0,40).map(x=>x.d),
             origin, plan, widened, rad};
+    if(plan.openNow && !plan.reply && origin)
+      plan.reply='What’s around you right now, nearest first — checking live opening hours.';
   }
   S.plan=result;
   S.planWhen=whenFrom(plan);
@@ -2543,10 +2596,23 @@ async function fetchSuggestions(text, known, auto){
   S.sug={loading:true, places:[], auto:!!auto};
   renderPlan();
   try{
+    const payload={q:text, known,
+      party:(S.plan&&S.plan.plan&&S.plan.plan.party)||null,
+      taste:tasteSummary()};
+    /* the discovery model is only as local as what it is told. When the ask is
+       anchored somewhere — your fix, or a named place — say exactly where, and
+       what time it is. A region ask ("west london") stays unanchored: the words
+       already carry it, and the origin may be nowhere near. */
+    const p0=S.plan&&S.plan.plan, orig=S.plan&&S.plan.origin;
+    if(orig && orig.pt && !(p0&&p0._reg)){
+      payload.near={label:orig.label==='you'?'their current location':orig.label,
+                    lat:orig.pt[0], lng:orig.pt[1]};
+      payload.when=new Date().toLocaleString('en-GB',
+        {weekday:'long', hour:'numeric', minute:'2-digit', hour12:true});
+      if(p0&&p0.openNow) payload.openNow=true;
+    }
     const r=await fetch('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({q:text, known,
-        party:(S.plan&&S.plan.plan&&S.plan.plan.party)||null,
-        taste:tasteSummary()})});
+      body:JSON.stringify(payload)});
     const d=await r.json();
     let places=(d.places||[]);
     /* the model came back empty. If this reads like a venue name, ask Google
@@ -2559,15 +2625,44 @@ async function fetchSuggestions(text, known, auto){
   }
   drawSugMarkers(S.sug.places);
   renderPlan();
+  /* live hours for the top few, so "anywhere still open?" can honestly badge
+     the discoveries too — and float the open ones up when that was the ask */
+  const withPin=(S.sug.places||[]).filter(p=>p.lat).slice(0,4);
+  if(withPin.length){
+    const mine=S.sug;
+    hydrateHours(withPin.map(p=>({n:p.name, lat:p.lat, lng:p.lng, gid:p.placeId||p.id||null})), 4)
+      .then(()=>{
+        if(S.sug!==mine) return;                    // a newer search took over
+        if(S.plan && S.plan.plan && S.plan.plan.openNow){
+          const sc=p=>{ const st=openState(p.name); return st===null?1:(st.open?0:2); };
+          mine.places=mine.places.slice().sort((a,b)=>sc(a)-sc(b));
+        }
+        drawSugMarkers(mine.places); renderPlan();
+      });
+  }
+}
+/* One rule for when the wider search runs, wherever a plan lands: thin bank
+   around the ask → look beyond it unprompted (an unfamiliar area is an
+   opportunity for discovery, not a dead end); rich bank → offer the button. */
+function chaseThin(plan, res, textOverride){
+  if(res && res._locPending) return;            // still finding them: decided after the fix
+  const known=(res&&res.type==='rows'?res.rows:[]).slice(0,20).map(d=>d.n);
+  const text=textOverride||(plan&&plan.asked)||'somewhere good nearby';
+  if(bankThin(res)) fetchSuggestions(text, known, true);
+  else { S.sug={idle:true, text, known}; renderPlan(); }
 }
 function sugCard(p){
   const el=document.createElement('div');
   el.className='card sug'; el.tabIndex=0;
+  const st=p.lat?openState(p.name):null;
+  const away=(S.me&&p.lat)?fmtDist(dist(S.me,[p.lat,p.lng]))+' away':null;
   el.innerHTML='<div class="pin">'+svg(p.kind||'eat')+'</div>'+
     '<div style="min-width:0;flex:1"><h3>'+esc(p.name)+'</h3>'+
-    '<p class="meta">'+esc([p.area, p.postcode].filter(Boolean).join(' · '))+'</p>'+
+    '<p class="meta">'+esc([p.area, p.postcode, away].filter(Boolean).join(' · '))+'</p>'+
     '<p class="snip">'+esc(p.why||'')+'</p>'+
-    '<div class="tagrow"><span class="tag">'+(p.via==='google'?'on Google':p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
+    '<div class="tagrow">'+
+    (st?'<span class="openbadge '+(st.open?'yes':'no')+'">'+(st.open?'Open now':'Closed now')+'</span>':'')+
+    '<span class="tag">'+(p.via==='google'?'on Google':p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
     (p.rating?'<span class="tag">'+p.rating+'★'+(p.ratingCount?' ('+p.ratingCount+')':'')+'</span>':'')+
     (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
   const saved=inBank(p.name);
@@ -2718,7 +2813,7 @@ function localRefine(prev, prevResult, text){
   const pl=findPlaces(t);
   if(pl.length){ merged.locations=pl.map(p=>p.name); merged.useMyLocation=false;
     merged.between=BETWEEN.test(t)&&pl.length>=2; changed=true; }
-  else if(NEARME.test(t)){ merged.useMyLocation=true; merged.locations=[]; changed=true; }
+  else if(NEARME.test(t)){ merged.useMyLocation=true; merged.explicitNear=true; merged.locations=[]; changed=true; }
   // timing: a named day or time word replaces the old one; earlier/later shifts it
   if(WHENWORDS.some(([re])=>re.test(t)) ||
      DAYS.some(d=>new RegExp('\\b'+d.toLowerCase()+'\\b').test(t))){
@@ -2747,7 +2842,8 @@ async function ask(text, fresh){
   if(prevPlan){
     const asNew=parseLocal(text);
     if(asNew && asNew._strong &&
-       ((asNew.locations&&asNew.locations.length) || (asNew.venues&&asNew.venues.length) || asNew.routeId)){
+       ((asNew.locations&&asNew.locations.length) || (asNew.venues&&asNew.venues.length)
+        || asNew.routeId || asNew.openNow)){
       prevPlan=null; fresh=true;
     }
   }
@@ -2761,10 +2857,7 @@ async function ask(text, fresh){
     if(merged){
       merged.asked=text;
       runPlan(merged);
-      const known=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(d=>d.n);
-      const sugQ=(prevPlan.asked?prevPlan.asked+' — but ':'')+text;
-      if(bankThin(S.plan)) fetchSuggestions(sugQ, known, true);
-      else { S.sug={idle:true, text:sugQ, known}; renderPlan(); }
+      chaseThin(merged, S.plan, (prevPlan.asked?prevPlan.asked+' — but ':'')+text);
       return;
     }
     /* not readable here: the model merges it, with the old plan as context */
@@ -2775,11 +2868,12 @@ async function ask(text, fresh){
       const d=await r.json();
       if(d && d.plan){
         d.plan.asked=text; d.plan.via='understood';
+        const t2=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
+        if(OPENNOW.test(t2)) d.plan.openNow=true;
+        if(NEARME.test(t2)) d.plan.explicitNear=true;
         await resolveVenues(d.plan);
         runPlan(d.plan);
-        const known2=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(x=>x.n);
-        if(bankThin(S.plan)) fetchSuggestions(text, known2, true);
-        else { S.sug={idle:true, text, known:known2}; renderPlan(); }
+        chaseThin(d.plan, S.plan);
       } else {
         S.plan=prevResult; render();
         toast('Could not read that one — still showing your last plan');
@@ -2799,11 +2893,10 @@ async function ask(text, fresh){
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
 
-  const known=(S.plan&&S.plan.type==='rows'?S.plan.rows:[]).slice(0,20).map(d=>d.n);
   /* the wider search is a model call plus several lookups. Run it only when
-     your own bank came up short; otherwise offer it as a button. */
-  if(bankThin(S.plan)) fetchSuggestions(text, known, true);
-  else { S.sug={idle:true, text, known}; renderPlan(); }
+     your own bank came up short; otherwise offer it as a button. If the app
+     is still locating them, the choice is made after the fix instead. */
+  chaseThin(local||{asked:text}, S.plan);
 
   // the built-in parser already read this one completely: no need to ask twice
   if(local && local._strong){ return; }
@@ -2814,8 +2907,14 @@ async function ask(text, fresh){
     const d=await r.json();
     if(d && d.plan){
       d.plan.asked=text; d.plan.via='understood';
+      /* the model doesn't carry these flags — read them off the sentence here,
+         so its plans locate and badge exactly like locally-read ones */
+      const t2=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
+      if(OPENNOW.test(t2)) d.plan.openNow=true;
+      if(NEARME.test(t2)) d.plan.explicitNear=true;
       await resolveVenues(d.plan);          // find a named venue we do not hold
       runPlan(d.plan);
+      if(!local) chaseThin(d.plan, S.plan);
     }
     else if(!local){ S.plan={type:'failed', asked:text,
       why:(d&&d.error==='no_key')?'The language model is not connected yet.':'I could not read that one.'};
@@ -2852,6 +2951,8 @@ const listEl=document.getElementById('list'), countEl=document.getElementById('c
 
 function render(){
   document.body.classList.toggle('thinking', !!(S.plan && S.plan.type==='thinking'));
+  /* at rest the phone shows map + composer only; the list is opt-in via ⋯ */
+  document.body.classList.toggle('home', window.innerWidth<=860 && !S.plan && !S.browse);
   if(S.plan){ renderPlan(); return; }
   let rows=DATA.filter(match);
   if(S.me) rows.sort((a,b)=>{
@@ -3202,6 +3303,14 @@ function liveHtml(live){
   const on=live.hours && live.hours.openNow;
   if(on===true) bits.push('<span class="openbadge yes">Open now</span>');
   if(on===false) bits.push('<span class="openbadge no">Closed now</span>');
+  /* today's actual times, visible without a tap — "Opening hours" with the
+     times folded away read as no times at all */
+  if(live.hours && live.hours.week && live.hours.week.length){
+    const today=DAYS[new Date().getDay()];
+    const line=live.hours.week.find(l=>l.toLowerCase().startsWith(today.toLowerCase()));
+    if(line){ const i=line.indexOf(':');
+      bits.push('<span class="tag">Today: '+esc(i>0?line.slice(i+1).trim():line)+'</span>'); }
+  }
   if(live.rating) bits.push('<span class="tag">★ '+esc(live.rating)+
     (live.ratingCount?' ('+esc(live.ratingCount)+')':'')+'</span>');
   if(live.status && live.status!=='OPERATIONAL')
@@ -3209,7 +3318,7 @@ function liveHtml(live){
   if(bits.length) h+='<div class="live">'+bits.join('')+'</div>';
   if(live.hours && live.hours.week && live.hours.week.length){
     const today=DAYS[new Date().getDay()];
-    h+='<details class="hoursbox"><summary>Opening hours</summary><ul>'+
+    h+='<details class="hoursbox"><summary>Opening hours this week ▾</summary><ul>'+
       live.hours.week.map(line=>{
         const isToday=line.toLowerCase().startsWith(today.toLowerCase());
         const i=line.indexOf(':');
@@ -3960,7 +4069,10 @@ function detailStep(dir){
     detail.style.transform='';
     const v=Math.max(Math.abs(dx),dy)/Math.max(Date.now()-t0,1);
     if(axis==='h'){
-      if(Math.abs(dx)>70 || (v>0.5 && Math.abs(dx)>36)) detailStep(dx<0?-1:1);
+      /* the results are a deck laid left-to-right, nearest leftmost: swiping
+         LEFT slides the deck along to the next (further) card, swiping RIGHT
+         brings the nearer one back — like flicking through cards */
+      if(Math.abs(dx)>70 || (v>0.5 && Math.abs(dx)>36)) detailStep(dx<0?1:-1);
       return;
     }
     if(dy>110 || (v>0.5 && dy>40)) closeBtn().click();
@@ -4179,8 +4291,11 @@ layout();
     mw.hidden=false;
   };
   mw.onclick=e=>{ if(e.target===mw) mw.hidden=true; };
+  const ba=document.getElementById('browseall');
+  if(ba) ba.onclick=()=>{ mw.hidden=true; S.browse=true; clearPlan();
+    if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1); };
   document.getElementById('newchat').onclick=()=>{
-    clearPlan(); q.value=''; S.q=''; sw.classList.remove('has');
+    S.browse=false; clearPlan(); q.value=''; S.q=''; sw.classList.remove('has');
     toast('Fresh start — ask away'); q.focus();
   };
   if(window.visualViewport){
