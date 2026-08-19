@@ -1099,8 +1099,14 @@ body.detail-open .mobtab{display:none}
 .mk{
   width:26px;height:26px;border-radius:50% 50% 50% 2px; transform:rotate(-45deg);
   display:grid;place-items:center; box-shadow:0 2px 6px rgba(0,0,0,.35);
-  border:1.5px solid rgba(255,255,255,.85);
+  border:1.5px solid rgba(255,255,255,.85); position:relative;
 }
+/* live open/closed on the pin itself: green means go, red means shut —
+   readable at a glance on banked AND unbanked pins alike */
+.mk .od{position:absolute; top:-4px; right:-4px; width:9px; height:9px;
+  border-radius:50%; border:1.5px solid #fff; pointer-events:none}
+.mk .od.on{background:#0ca30c}
+.mk .od.off{background:#c8372d}
 html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
 .mk svg{width:13px;height:13px;fill:#fff;transform:rotate(45deg)}
 .mk.sel{outline:3px solid var(--accent); outline-offset:2px; z-index:1000!important}
@@ -1204,8 +1210,15 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .prompts::-webkit-scrollbar{display:none}
   .prompts button{flex:none; white-space:nowrap}
   /* once a card or a conversation is up, the starter chips are clutter —
-     they were sitting on top of the card's Maps/Instagram buttons */
+     they were sitting on top of the card's Maps/Instagram buttons. On the
+     phone they exist ONLY in the at-rest home state, full stop. */
   body.detail-open .prompts{display:none}
+  body:not(.home) .prompts{display:none}
+  /* inside the composer they flow under the input, no fixed positioning */
+  .composer{flex-wrap:wrap}
+  .composer .prompts{position:static; left:auto; right:auto; bottom:auto;
+    transform:none; z-index:auto; margin:8px 0 0; padding:0 2px;
+    flex:1 0 100%; order:10}
   /* the reply is a chat bubble at the top of the sheet, orb as its avatar */
   .planbar{
     margin:6px 12px 4px; border:1px solid var(--line); border-radius:16px 16px 16px 5px;
@@ -1829,6 +1842,7 @@ function setOrigin(latlng,label,kind){
     ' · <button class="lnk" id="clearorigin">clear</button>';
   document.getElementById('clearorigin').onclick=clearOrigin;
   drawMe(); render();
+  if(label==='your location') ambientNearby();   // a real fix in a sparse area shows Google's view unasked
 }
 function clearOrigin(){
   S.me=null; S.meLabel=''; radiusSel.disabled=true;
@@ -2526,6 +2540,7 @@ function runPlan(plan){
       {enableHighAccuracy:true, timeout:8000, maximumAge:120000});
     return hold;
   }
+  drawNearbyMarkers([]);   // ambient/stale Google pins never survive into a new plan
   /* -------- events: the outside layer reads the feed, not the bank -------- */
   if(plan.eventsAsk){
     const origin=planOrigin(plan);
@@ -2642,6 +2657,7 @@ async function applyHours(result){
   result.hoursPending=true; render();
   await hydrateHours(rows, result.type==='anchor'?12:10);
   result.hoursPending=false;
+  rows.forEach(d=>refreshFavIcon(d));   // the pins wear the verdict too: green open, red shut
 
   if(result.type==='anchor'){
     // choose again now that opening times are known
@@ -2698,7 +2714,7 @@ function drawEventMarkers(list){
   if(evLayer){ map.removeLayer(evLayer); evLayer=null; }
   const pts=(list||[]).filter(e=>e.lat);
   if(!pts.length) return;
-  evLayer=L.layerGroup(pts.map(e=>{
+  evLayer=L.layerGroup(pts.map(e=>{ /* events: no hours model, no dot */
     const m=L.marker([e.lat,e.lng],{icon:L.divIcon({className:'lm',
       html:'<div class="mk ev">'+svg('culture')+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
       title:e.title});
@@ -2732,8 +2748,10 @@ function drawSugMarkers(list){
   if(sugLayer){ map.removeLayer(sugLayer); sugLayer=null; }
   if(!list || !list.length) return;
   sugLayer=L.layerGroup(list.map(p=>{
+    const st=(typeof p.open==='boolean')?{open:p.open}:openState(p.name);
+    const dot=st?'<i class="od '+(st.open?'on':'off')+'"></i>':'';
     const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'lm',
-      html:'<div class="mk sug">'+svg(p.kind||'eat')+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
+      html:'<div class="mk sug">'+svg(p.kind||'eat')+dot+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
       title:p.name});
     m.on('click',()=>openSuggestion(p));
     return m;
@@ -2820,8 +2838,9 @@ function drawNearbyMarkers(list){
   const pts=(list||[]).filter(p=>p.lat);
   if(!pts.length) return;
   nearLayer=L.layerGroup(pts.map(p=>{
+    const dot=(typeof p.open==='boolean')?'<i class="od '+(p.open?'on':'off')+'"></i>':'';
     const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'lm',
-      html:'<div class="mk sug">'+svg(p.kind||'drink')+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
+      html:'<div class="mk sug">'+svg(p.kind||'drink')+dot+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
       title:p.name});
     m.on('click',()=>openSuggestion(p));
     return m;
@@ -2830,6 +2849,27 @@ function drawNearbyMarkers(list){
 function bankFarFrom(result){
   if(!result.origin) return true;
   return (result.rows||[]).filter(d=>d.lat && dist(result.origin.pt,[d.lat,d.lng])<=2).length<3;
+}
+/* standing somewhere the bank barely knows? The map shouldn't wait to be
+   asked — it shows Google's view of what's around as dashed pins the moment
+   the fix lands. One call per session, wiped the moment a real plan draws. */
+let ambientDone=false;
+async function ambientNearby(){
+  if(ambientDone || S.plan || !S.me) return;
+  const covered=DATA.filter(d=>d.lat && dist(S.me,[d.lat,d.lng])<=2).length;
+  if(covered>=3) return;                       // the bank already knows this area
+  ambientDone=true;
+  try{
+    const r=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nearby:{kind:'any', radius:2000}, lat:S.me[0], lng:S.me[1]})});
+    const d=await r.json();
+    const places=((d&&d.places)||[]).filter(p=>!inBank(p.name));
+    places.forEach(p=>{ p.area=p.area||p.address; });
+    if(!S.plan && places.length){
+      drawNearbyMarkers(places);
+      toast('Your bank is thin around here — the dashed pins are what Google knows nearby');
+    }
+  }catch(e){ ambientDone=false; }              // offline now ≠ never
 }
 async function fetchNearby(result){
   const plan=result.plan;
@@ -3243,7 +3283,9 @@ function render(){
     const naked=rows.slice(0,8).filter(d=>d.lat && !knownHours(d.n));
     if(naked.length){
       render._hydrating=true;
-      hydrateHours(naked, 8).then(()=>{ render._hydrating=false; if(!S.plan) render(); })
+      hydrateHours(naked, 8).then(()=>{ render._hydrating=false;
+          naked.forEach(d=>refreshFavIcon(d));
+          if(!S.plan) render(); })
         .catch(()=>{ render._hydrating=false; });
     }
   }
@@ -3438,6 +3480,7 @@ function planView(r){
 
 function renderPlan(){
   setPromptHint();
+  drawPrompts();      // a plan on screen means the starter chips are gone — every path
   const p=S.plan;
   /* Re-renders of the SAME plan (opening hours arriving, ranks settling) must
      not yank the sheet back to half or throw the scroll to the top — that is
@@ -3690,8 +3733,10 @@ function refreshFavIcon(d){
   const m=markers.get(d.n);
   if(!m || !d.lat) return;
   const ring=d.src==='insta'?'insta ':d.src==='mine'?'mine ':'';
+  const st=openState(d.n);
+  const dot=st?'<i class="od '+(st.open?'on':'off')+'"></i>':'';
   m.setIcon(L.divIcon({className:'lm',
-    html:'<div class="mk '+ring+(isFav(d)?'fav':'')+'" data-c="'+d.c+'" style="background:'+css('--'+d.c)+'">'+svg(d.c)+'</div>',
+    html:'<div class="mk '+ring+(isFav(d)?'fav':'')+'" data-c="'+d.c+'" style="background:'+css('--'+d.c)+'">'+svg(d.c)+dot+'</div>',
     iconSize:[26,26], iconAnchor:[13,26]}));
 }
 function refreshFavChip(){
@@ -4598,7 +4643,9 @@ function shellLayout(mobile){
     const m1=document.getElementById('mslot1'); m1.appendChild(nr); m1.appendChild(gs);
     document.getElementById('mslot2').appendChild(fl);
     const ma=document.getElementById('mactions'); ma.prepend(th); ma.prepend(ai);
-    document.body.appendChild(pr);
+    /* the starter chips live UNDER the input, as part of the chat — not
+       floating over the map */
+    document.getElementById('composer').appendChild(pr);
   } else [sw2,nr,gs,fl,pr,ai,th].forEach(sendHome);
 }
 
