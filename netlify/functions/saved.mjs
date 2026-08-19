@@ -9,6 +9,7 @@
 import { getStore } from '@netlify/blobs';
 
 const KEY = 'saved-v1';
+const FAVKEY = 'favs-v1';   // slugs of favourited places — the taste signal
 const J = (obj, status = 200) => new Response(JSON.stringify(obj), {
   status,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' },
@@ -76,11 +77,19 @@ export default async (req) => {
     return J({ error: 'no_store', detail: String(e && e.message || e) });
   }
 
+  const readFavs = async () => {
+    try {
+      const v = await store.get(FAVKEY, { type: 'json' });
+      return Array.isArray(v) ? v.filter(x => typeof x === 'string').slice(0, 500) : [];
+    } catch (e) { return []; }
+  };
+
   try {
     // reading is open: it is your own list on your own site
     if (action === 'list') {
       const places = await readAll(store);
-      return J({ places, count: places.length });
+      const favs = await readFavs();
+      return J({ places, count: places.length, favs });
     }
 
     const auth = passOk(body.pass);
@@ -98,6 +107,18 @@ export default async (req) => {
       else places.push(rec);
       await store.setJSON(KEY, places);
       return J({ ok: true, saved: rec, count: places.length, replaced: at >= 0 });
+    }
+
+    if (action === 'fav' || action === 'unfav') {
+      const key = slug(body.name);
+      if (!key) return J({ error: 'bad_name' });
+      const favs = await readFavs();
+      const has = favs.includes(key);
+      const next = action === 'fav'
+        ? (has ? favs : favs.concat(key))
+        : favs.filter(x => x !== key);
+      await store.setJSON(FAVKEY, next);
+      return J({ ok: true, fav: action === 'fav', favs: next, count: next.length });
     }
 
     if (action === 'remove') {

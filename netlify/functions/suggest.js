@@ -51,7 +51,7 @@ function gIsVenue(p) {
   return types.some(t => G_GOOD.has(t) || /_restaurant$/.test(t));
 }
 
-async function googleCheck(name, area, street) {
+async function googleCheck(name, area, street, near) {
   const key = googleKey();
   if (!key) return null;
   const q = [name, street, area, 'London'].filter(Boolean).join(', ');
@@ -66,9 +66,12 @@ async function googleCheck(name, area, street) {
       },
       body: JSON.stringify({
         textQuery: q, maxResultCount: 5, languageCode: 'en-GB', regionCode: 'GB',
-        locationBias: { rectangle: {
-          low: { latitude: 51.25, longitude: -0.56 },
-          high: { latitude: 51.72, longitude: 0.34 } } },
+        // when we know where the user is standing, look THERE first
+        locationBias: near
+          ? { circle: { center: { latitude: near.lat, longitude: near.lng }, radius: 3000 } }
+          : { rectangle: {
+              low: { latitude: 51.25, longitude: -0.56 },
+              high: { latitude: 51.72, longitude: 0.34 } } },
       }),
     });
     if (!r.ok) return null;
@@ -273,6 +276,41 @@ exports.handler = async (event) => {
   try { body = JSON.parse(event.body || '{}'); } catch (e) {}
   const q = (body.q || '').toString().slice(0, 400);
   const known = (Array.isArray(body.known) ? body.known : []).slice(0, 40).join(', ');
+  // their taste, distilled from favourites and saves — a steer, never a cage
+  let tasteLine = '';
+  if (body.taste && typeof body.taste === 'object') {
+    const t = body.taste;
+    const arr = x => (Array.isArray(x) ? x.filter(v => typeof v === 'string').slice(0, 6) : []);
+    const bits = [];
+    if (arr(t.tags).length) bits.push('leans toward: ' + arr(t.tags).join(', '));
+    if (arr(t.cuisines).length) bits.push('cuisines they favour: ' + arr(t.cuisines).join(', '));
+    if (arr(t.bands).length) bits.push('usual price band: ' + arr(t.bands).join('/'));
+    if (arr(t.favourites).length) bits.push('favourite places: ' + arr(t.favourites).join(', '));
+    if (bits.length) tasteLine = '\n\nTheir taste (from what they favourite and save): ' +
+      bits.join('; ') + '. Prefer places that fit it when the request leaves room, ' +
+      'but never ignore an explicit ask to match it.';
+  }
+  /* where they are and when they asked. This is what turns "open near me"
+     from a list of famous central places into a local answer. */
+  let near = null;
+  if (body.near && typeof body.near === 'object'
+      && Number.isFinite(+body.near.lat) && Number.isFinite(+body.near.lng)
+      && +body.near.lat > 51.2 && +body.near.lat < 51.8
+      && +body.near.lng > -0.6 && +body.near.lng < 0.4) {
+    near = { lat: +body.near.lat, lng: +body.near.lng,
+             label: String(body.near.label || 'their location').slice(0, 60) };
+  }
+  const when = body.when ? String(body.when).slice(0, 60) : null;
+  const openNow = body.openNow === true;
+  let nearLine = '';
+  if (near) {
+    nearLine = `\n\nThe user is at ${near.label} (${near.lat.toFixed(4)}, ${near.lng.toFixed(4)}) right now. ` +
+      'Suggest places genuinely close to those coordinates — walking distance or a few minutes away, ' +
+      'within roughly 2–3 km. Do NOT default to famous central-London venues; name the good ' +
+      'local options in that actual neighbourhood, the ones someone who lives there would know.';
+    if (when) nearLine += `\nIt is ${when} in London.` +
+      (openNow ? ' They need somewhere open and serving RIGHT NOW — only suggest places very likely to be open at this exact time.' : '');
+  }
   if (!q.trim()) return { statusCode: 400, headers, body: JSON.stringify({ error: 'empty' }) };
 
   const key = findKey();
@@ -287,7 +325,7 @@ exports.handler = async (event) => {
         model, max_tokens: 700, system: SYSTEM,
         tools: [SCHEMA], tool_choice: { type: 'tool', name: 'suggestions' },
         messages: [{ role: 'user', content:
-          `Request: ${q}\n\nAlready in their list, do not repeat: ${known || '(nothing relevant)'}` }],
+          `Request: ${q}\n\nAlready in their list, do not repeat: ${known || '(nothing relevant)'}${nearLine}${tasteLine}` }],
       }),
     });
     const d = await r.json();
@@ -300,7 +338,7 @@ exports.handler = async (event) => {
     // verify every one against the FSA register, in parallel
     const checked = await Promise.all(raw.slice(0, 4).map(async p => {
       // Google first: it carries the small bars, and it knows what a place is
-      let hit = await googleCheck(p.name, p.area, p.street);
+      let hit = await googleCheck(p.name, p.area, p.street, near);
       if (!hit) hit = await fsaCheck(p.name, p.area);
       if (!hit && p.street) hit = await geoCheck(p.name, p.street, p.area);
       if (!hit) hit = await geoCheck(p.name, null, p.area);
@@ -312,7 +350,19 @@ exports.handler = async (event) => {
         via: hit.via, confident: p.confident !== false,
       };
     }));
-    const places = checked.filter(Boolean);
+    let places = checked.filter(Boolean);
+    /* the model may name somewhere plausible that verifies at its REAL address
+       across town. When the ask is anchored, an answer 10km away is not an
+       answer — drop it rather than pretend it is local. */
+    if (near) {
+      const km = p => {
+        const R = 6371, dLa = (p.lat - near.lat) * Math.PI / 180, dLo = (p.lng - near.lng) * Math.PI / 180;
+        const a = Math.sin(dLa / 2) ** 2 +
+          Math.cos(near.lat * Math.PI / 180) * Math.cos(p.lat * Math.PI / 180) * Math.sin(dLo / 2) ** 2;
+        return 2 * R * Math.asin(Math.sqrt(a));
+      };
+      places = places.filter(p => !Number.isFinite(+p.lat) || km(p) <= 6);
+    }
     const out = { places, model, proposed: raw.length, verified: places.length };
     if (body.debug) out.raw = raw;
     return { statusCode: 200, headers, body: JSON.stringify(out) };
