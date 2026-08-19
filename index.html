@@ -2612,6 +2612,10 @@ function runPlan(plan){
   if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
   render();
   applyHours(result);
+  /* in the moment, with nothing walkable in the bank: ask Google what is
+     PHYSICALLY around them, and show that first */
+  if(result.type==='rows' && result.origin && (plan.explicitNear||plan.openNow)
+     && bankFarFrom(result)) fetchNearby(result);
   drawRoute(result.type==='anchor'?result:null);
   const pts=(result.type==='anchor'
       ? (result.anchor?[[result.anchor.d.lat,result.anchor.d.lng]]:[])
@@ -2655,7 +2659,7 @@ async function applyHours(result){
      present a list at 2am that quietly implies everything on it is open —
      if it's all shut, SAY it's all shut, and name what would have been the
      call. Honesty beats a confident-looking list that dies on first tap. */
-  if(result.plan && result.plan.openNow){
+  if(result.plan && result.plan.openNow && !result.plan._nearbySaid){
     const known=result.rows.map(d=>({d, st:openState(d.n, when)})).filter(x=>x.st);
     const open=known.filter(x=>x.st.open), shut=known.filter(x=>!x.st.open);
     const kmTo=d=>(S.me&&d.lat)?fmtDist(dist(S.me,[d.lat,d.lng]))+' away':null;
@@ -2677,7 +2681,7 @@ async function applyHours(result){
   render();
 }
 
-function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); }
+function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); }
 
 /* ---- the outside layer: the events feed, scouted weekly ---- */
 let EVENTS=[], EVENTS_META=null;
@@ -2805,6 +2809,67 @@ async function fetchSuggestions(text, known, auto){
       });
   }
 }
+/* ---- what is PHYSICALLY around you: Google nearby, nearest first ---- */
+/* The bank can't know Northolt and the model may not either, but the pub 10
+   minutes away exists — Google always knows it. For an in-the-moment ask
+   where the bank is thin at walking distance, this is the FIRST answer, shown
+   above the bank's far-away rows, never silently mixed into them. */
+let nearLayer=null;
+function drawNearbyMarkers(list){
+  if(nearLayer){ map.removeLayer(nearLayer); nearLayer=null; }
+  const pts=(list||[]).filter(p=>p.lat);
+  if(!pts.length) return;
+  nearLayer=L.layerGroup(pts.map(p=>{
+    const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'lm',
+      html:'<div class="mk sug">'+svg(p.kind||'drink')+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
+      title:p.name});
+    m.on('click',()=>openSuggestion(p));
+    return m;
+  })).addTo(map);
+}
+function bankFarFrom(result){
+  if(!result.origin) return true;
+  return (result.rows||[]).filter(d=>d.lat && dist(result.origin.pt,[d.lat,d.lng])<=2).length<3;
+}
+async function fetchNearby(result){
+  const plan=result.plan;
+  const k0=(plan.stops&&plan.stops[0]&&plan.stops[0].kind)||'any';
+  const kind=['drink','eat','coffee'].includes(k0)?k0:'any';
+  result.nearby={loading:true};
+  renderPlan();
+  try{
+    const r=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({nearby:{kind, radius:2500},
+        lat:result.origin.pt[0], lng:result.origin.pt[1]})});
+    const d=await r.json();
+    let places=((d&&d.places)||[]).filter(p=>!inBank(p.name));
+    places.forEach(p=>{ p.area=p.area||p.address; });
+    if(plan.openNow) places=places.slice().sort((a,b)=>
+      (a.open===true?0:a.open===null?1:2)-(b.open===true?0:b.open===null?1:2));
+    result.nearby={loading:false, places};
+    /* now the reply can be genuinely smart about what's around */
+    if(places.length && result.origin){
+      const kmTxt=p=>fmtDist(dist(result.origin.pt,[p.lat,p.lng]));
+      const openOnes=places.filter(p=>p.open===true);
+      if(plan.openNow && openOnes.length){
+        plan.reply='Your bank is quiet here, but around you right now: '+openOnes[0].name+
+          ' ('+kmTxt(openOnes[0])+' away) looks open.'+
+          (openOnes.length>1?' '+(openOnes.length-1)+' more below.':'');
+        plan._nearbySaid=true;
+      } else if(plan.openNow && places.every(p=>p.open===false)){
+        plan.reply='Straight with you — even beyond your bank, everything close by looks shut. '+
+          'Nearest would be '+places[0].name+', '+kmTxt(places[0])+' away.';
+        plan._nearbySaid=true;
+      } else if(!plan.openNow){
+        plan.reply='Your bank has nothing close to here, so these are what\'s actually around you — '+
+          places[0].name+' is '+kmTxt(places[0])+' away.';
+        plan._nearbySaid=true;
+      }
+    }
+  }catch(e){ result.nearby={loading:false, places:[], failed:true}; }
+  if(S.plan===result){ drawNearbyMarkers(result.nearby.places); renderPlan(); }
+}
+
 /* One rule for when the wider search runs, wherever a plan lands: thin bank
    around the ask → look beyond it unprompted (an unfamiliar area is an
    opportunity for discovery, not a dead end); rich bank → offer the button. */
@@ -2819,7 +2884,9 @@ function chaseThin(plan, res, textOverride){
 function sugCard(p){
   const el=document.createElement('div');
   el.className='card sug'; el.tabIndex=0;
-  const st=p.lat?openState(p.name):null;
+  /* nearby results carry Google's live open flag; model discoveries fall
+     back to whatever hours hydration has learned */
+  const st=p.lat?((typeof p.open==='boolean')?{open:p.open}:openState(p.name)):null;
   const away=(S.me&&p.lat)?fmtDist(dist(S.me,[p.lat,p.lng]))+' away':null;
   el.innerHTML='<div class="pin">'+svg(p.kind||'eat')+'</div>'+
     '<div style="min-width:0;flex:1"><h3>'+esc(p.name)+'</h3>'+
@@ -3066,7 +3133,7 @@ async function ask(text, fresh){
   }
 
   /* -------- a fresh ask -------- */
-  if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawRoute(null); drawAlts(null); }
+  if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawNearbyMarkers([]); drawRoute(null); drawAlts(null); }
   const local=parseLocal(text);
   /* a bare venue name is "where is this place" — answer it, don't interrogate it */
   if(!local && looksLikeName(text)){ lookup(text); return; }
@@ -3257,9 +3324,13 @@ function renderSuggestions(){
                : why.charAt(0).toUpperCase()+why.slice(1))+'</div>');
     return;
   }
+  /* what the Google-nearby section already shows must not repeat here */
+  const nearNames=new Set(((S.plan&&S.plan.nearby&&S.plan.nearby.places)||[]).map(p=>slugOf(p.name)));
+  const fresh=sg.places.filter(p=>!nearNames.has(slugOf(p.name)));
+  if(!fresh.length) return;
   const head=document.createElement('div');
   head.className='sechead';
-  head.innerHTML='Not in your bank <span class="badge">'+sg.places.length+' suggested</span>';
+  head.innerHTML='Not in your bank <span class="badge">'+fresh.length+' suggested</span>';
   listEl.appendChild(head);
   listEl.insertAdjacentHTML('beforeend',
     '<div class="secnote">'+(sg.allShut?'Honestly? These look shut right now too — they\'re here for next time. ':'')+
@@ -3267,7 +3338,7 @@ function renderSuggestions(){
     'The model put these forward and each address was checked against the '+
     'UK food hygiene register. Nobody you trust has vouched for them.</div>');
   const f=document.createDocumentFragment();
-  sg.places.forEach(p=>f.appendChild(sugCard(p)));
+  fresh.forEach(p=>f.appendChild(sugCard(p)));
   listEl.appendChild(f);
 }
 
@@ -3431,11 +3502,27 @@ function renderPlan(){
     if(again) listEl.scrollTop=keep;
     return;
   }
+  /* what's physically around you comes FIRST — never below 40 far-away rows */
+  if(p.nearby && (p.nearby.loading || (p.nearby.places||[]).length)){
+    listEl.insertAdjacentHTML('beforeend',
+      '<div class="sechead">Actually near you <span class="badge">Google</span></div>');
+    if(p.nearby.loading){
+      listEl.insertAdjacentHTML('beforeend',
+        '<div class="loadingrow">Checking what’s physically around you…</div>');
+    } else {
+      listEl.insertAdjacentHTML('beforeend',
+        '<div class="secnote">Real places around your location — not from your bank, '+
+        'nobody you trust has vouched for them.</div>');
+      p.nearby.places.slice(0,5).forEach(pl=>listEl.appendChild(sugCard(pl)));
+      if(p.rows.length) listEl.insertAdjacentHTML('beforeend',
+        '<div class="sechead">From your bank — further out</div>');
+    }
+  }
   if(S.anchorPlace){
     listEl.insertAdjacentHTML('beforeend','<div class="sechead">The place you named</div>');
     listEl.appendChild(sugCard(S.anchorPlace));
   }
-  if(!items.length){
+  if(!items.length && !(p.nearby&&(p.nearby.places||[]).length)){
     listEl.insertAdjacentHTML('beforeend',
       '<div class="empty">Nothing in the bank fits that yet.<br>Try widening it, or clear and browse.</div>');
   }

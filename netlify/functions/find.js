@@ -130,6 +130,41 @@ const inLondon = p => {
   return L.latitude > 51.2 && L.latitude < 51.8 && L.longitude > -0.6 && L.longitude < 0.4;
 };
 
+// what is PHYSICALLY around these coordinates, nearest first. This is the
+// answer to "there's a pub 10 minutes away, why can't it see it" — the bank
+// can't know Northolt, the model may not either, but Google always does.
+const NEARBY_TYPES = {
+  drink: ['pub', 'bar', 'wine_bar', 'night_club'],
+  eat: ['restaurant'],
+  coffee: ['cafe', 'coffee_shop', 'bakery'],
+  any: ['pub', 'bar', 'restaurant', 'cafe'],
+};
+async function searchNearby(key, near, kind, radius) {
+  const r = await fetch(BASE + '/places:searchNearby', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': key,
+      'X-Goog-FieldMask': [
+        'places.id', 'places.displayName', 'places.formattedAddress', 'places.shortFormattedAddress',
+        'places.location', 'places.primaryType', 'places.types',
+        'places.rating', 'places.userRatingCount', 'places.businessStatus',
+        'places.currentOpeningHours.openNow',
+      ].join(','),
+    },
+    body: JSON.stringify({
+      includedTypes: NEARBY_TYPES[kind] || NEARBY_TYPES.any,
+      maxResultCount: 10,
+      rankPreference: 'DISTANCE',
+      languageCode: 'en-GB', regionCode: 'GB',
+      locationRestriction: { circle: {
+        center: { latitude: near.lat, longitude: near.lng }, radius } },
+    }),
+  });
+  if (!r.ok) return { error: 'nearby_' + r.status, detail: (await r.text()).slice(0, 300) };
+  return { places: ((await r.json()).places) || [] };
+}
+
 exports.handler = async (event) => {
   const headers = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' };
   if (event.httpMethod !== 'POST')
@@ -140,10 +175,43 @@ exports.handler = async (event) => {
   const qRaw = (body.q || '').toString().trim().slice(0, 120);
   const area = (body.area || '').toString().trim().slice(0, 60);
   const near = (Number(body.lat) && Number(body.lng)) ? { lat: Number(body.lat), lng: Number(body.lng) } : null;
-  if (!qRaw) return { statusCode: 400, headers, body: JSON.stringify({ error: 'empty' }) };
 
   const key = findKey();
   if (!key) return { statusCode: 200, headers, body: JSON.stringify({ places: [], error: 'no_key' }) };
+
+  /* nearby mode: no name, just "what is around me" — needs coordinates */
+  if (body.nearby) {
+    if (!near) return { statusCode: 400, headers, body: JSON.stringify({ error: 'nearby_needs_latlng' }) };
+    const kind = String(body.nearby.kind || 'any');
+    const radius = Math.min(Math.max(Number(body.nearby.radius) || 2500, 300), 8000);
+    try {
+      const res = await searchNearby(key, near, kind, radius);
+      if (res.error) return { statusCode: 200, headers, body: JSON.stringify({ places: [], error: res.error, detail: res.detail }) };
+      const out = [];
+      for (const p of res.places) {
+        if (!inLondon(p)) continue;
+        if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') continue;
+        if (!isVenue(p)) continue;
+        out.push({
+          id: p.id,
+          name: (p.displayName || {}).text || '',
+          address: p.shortFormattedAddress || p.formattedAddress || null,
+          lat: p.location.latitude, lng: p.location.longitude,
+          kind: kindOf(p), type: p.primaryType || null,
+          rating: p.rating || null, ratingCount: p.userRatingCount || null,
+          open: (p.currentOpeningHours && typeof p.currentOpeningHours.openNow === 'boolean')
+            ? p.currentOpeningHours.openNow : null,
+          via: 'google',
+        });
+      }
+      return { statusCode: 200, headers,
+        body: JSON.stringify({ places: out.slice(0, 8), considered: res.places.length }) };
+    } catch (e) {
+      return { statusCode: 200, headers, body: JSON.stringify({ places: [], error: 'exception', detail: String(e) }) };
+    }
+  }
+
+  if (!qRaw) return { statusCode: 400, headers, body: JSON.stringify({ error: 'empty' }) };
 
   const bias = near
     ? { circle: { center: { latitude: near.lat, longitude: near.lng }, radius: 3000 } }

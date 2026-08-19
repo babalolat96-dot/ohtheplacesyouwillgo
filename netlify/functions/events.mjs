@@ -119,6 +119,27 @@ export default async (req) => {
       return J({ ok: true, count: 0 });
     }
 
+    /* the scout's learned sources: every promoter or listing page the app is
+       taught gets read weekly from then on — orixa is the floor, not the
+       ceiling. The app adds these when an Instagram event post is imported. */
+    if (action === 'addsource') {
+      const url = String(body.url || '');
+      if (!/^https:\/\/[^\s]{4,300}$/.test(url)) return J({ error: 'bad_url' });
+      const label = String(body.label || '').slice(0, 30) || null;
+      let srcs = [];
+      try { const v = await store.get('evsources-v1', { type: 'json' }); srcs = Array.isArray(v) ? v : []; } catch (e) {}
+      if (!srcs.some(s => s.url === url)) srcs.push({ url, label, addedAt: Date.now() });
+      await store.setJSON('evsources-v1', srcs.slice(-30));
+      return J({ ok: true, sources: srcs.length });
+    }
+    if (action === 'delsource') {
+      let srcs = [];
+      try { const v = await store.get('evsources-v1', { type: 'json' }); srcs = Array.isArray(v) ? v : []; } catch (e) {}
+      const left = srcs.filter(s => s.url !== String(body.url || ''));
+      await store.setJSON('evsources-v1', left);
+      return J({ ok: true, sources: left.length });
+    }
+
     return J({ error: 'unknown_action' });
   } catch (e) {
     return J({ error: 'exception', detail: String(e && e.message || e) });
