@@ -1214,11 +1214,20 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
      phone they exist ONLY in the at-rest home state, full stop. */
   body.detail-open .prompts{display:none}
   body:not(.home) .prompts{display:none}
-  /* inside the composer they flow under the input, no fixed positioning */
+  /* inside the composer they flow under the input — quiet ghost text, not a
+     wall of pills. The row fades out at the right edge as it scrolls. */
   .composer{flex-wrap:wrap}
   .composer .prompts{position:static; left:auto; right:auto; bottom:auto;
-    transform:none; z-index:auto; margin:8px 0 0; padding:0 2px;
-    flex:1 0 100%; order:10}
+    transform:none; z-index:auto; margin:9px 2px 1px; padding:0;
+    flex:1 0 100%; order:10; gap:18px;
+    -webkit-mask-image:linear-gradient(90deg,#000 82%,transparent);
+    mask-image:linear-gradient(90deg,#000 82%,transparent)}
+  .composer .prompts button{background:none; border:0; padding:2px 0;
+    color:var(--ink-3); font-size:13px; letter-spacing:.005em}
+  .composer .prompts button:active{color:var(--ink)}
+  /* the one-line guess while typing: an offered completion, not a menu */
+  .composer .prompts .guess{color:var(--ink-2)}
+  .composer .prompts .guess::before{content:'↳ '; color:var(--ink-3)}
   /* the reply is a chat bubble at the top of the sheet, orb as its avatar */
   .planbar{
     margin:6px 12px 4px; border:1px solid var(--line); border-radius:16px 16px 16px 5px;
@@ -1826,7 +1835,20 @@ const PROMPTS=[
 function drawPrompts(){
   const el=document.getElementById('prompts');
   if(!el) return;
-  if(S.plan || q.value.trim()){ el.innerHTML=''; return; }
+  if(S.plan){ el.innerHTML=''; return; }
+  const typed=q.value.trim();
+  if(typed){
+    /* mid-type, one quiet line tracks what you seem to be going for —
+       tap it and it sends. Never a wall of chips while you're writing. */
+    const t=typed.toLowerCase();
+    const g=t.length>=2
+      ? (PROMPTS.find(p2=>p2.toLowerCase().startsWith(t)) ||
+         PROMPTS.find(p2=>p2.toLowerCase().split(/\s+/).some(w=>w.startsWith(t))) || null)
+      : null;
+    el.innerHTML = g ? '<button type="button" class="guess">'+esc(g)+'</button>' : '';
+    const b=el.querySelector('button'); if(b) b.onclick=()=>ask(g);
+    return;
+  }
   el.innerHTML=PROMPTS.map((t,i)=>'<button type="button" data-i="'+i+'">'+esc(t)+'</button>').join('');
   [...el.querySelectorAll('button')].forEach(b=>{ b.onclick=()=>ask(PROMPTS[+b.dataset.i]); });
 }
@@ -2627,10 +2649,11 @@ function runPlan(plan){
   if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
   render();
   applyHours(result);
-  /* in the moment, with nothing walkable in the bank: ask Google what is
-     PHYSICALLY around them, and show that first */
-  if(result.type==='rows' && result.origin && (plan.explicitNear||plan.openNow)
-     && bankFarFrom(result)) fetchNearby(result);
+  /* anchored anywhere the bank is thin — "drinks near me", "drinks in
+     northolt", any phrasing: ask Google what is PHYSICALLY around that
+     point and show it first. The behaviour tracks the MEANING, never one
+     magic phrase. */
+  if(result.type==='rows' && result.origin && bankFarFrom(result)) fetchNearby(result);
   drawRoute(result.type==='anchor'?result:null);
   const pts=(result.type==='anchor'
       ? (result.anchor?[[result.anchor.d.lat,result.anchor.d.lng]]:[])
@@ -3280,8 +3303,12 @@ function render(){
      hours for the top of it so "until 23:00" / "Closed now" shows on the
      cards without opening one. Cached a week, so this costs almost nothing. */
   if(rows.length && rows.length<=40 && !render._hydrating){
-    const naked=rows.slice(0,8).filter(d=>d.lat && !knownHours(d.n));
+    /* one attempt per place per session: a lookup that returns nothing
+       (offline, an API error) must not re-render into asking again forever */
+    render._hydTried=render._hydTried||new Set();
+    const naked=rows.slice(0,8).filter(d=>d.lat && !knownHours(d.n) && !render._hydTried.has(d.n));
     if(naked.length){
+      naked.forEach(d=>render._hydTried.add(d.n));
       render._hydrating=true;
       hydrateHours(naked, 8).then(()=>{ render._hydrating=false;
           naked.forEach(d=>refreshFavIcon(d));
