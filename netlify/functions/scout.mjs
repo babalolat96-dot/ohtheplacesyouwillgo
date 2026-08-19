@@ -12,7 +12,9 @@
 
 import { getStore } from '@netlify/blobs';
 
-export const config = { schedule: '0 9 * * 4' };   // Thursdays 09:00 UTC
+// Wednesdays 14:30 London. Netlify cron is UTC and does NOT follow the
+// clocks changing: 13:30 UTC is 2:30pm in summer, 1:30pm in winter.
+export const config = { schedule: '30 13 * * 3' };
 
 const KEY = 'events-v1';
 const LANE = /afro|amapiano|gqom|3.?step|soulection|r&b|rnb|\bsoul\b|piano|carnival|afrobeat|dancehall|bashment/i;

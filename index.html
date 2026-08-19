@@ -1186,8 +1186,10 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .composer{
     position:fixed; left:10px; right:10px; bottom:calc(10px + env(safe-area-inset-bottom));
     z-index:44; display:flex; align-items:center; gap:7px;
-    background:var(--surface); border:1px solid var(--line); border-radius:999px;
-    padding:6px 8px; box-shadow:0 10px 34px rgba(0,0,0,.3);
+    /* a rounded rect, not a capsule: with the suggestion line wrapped inside,
+       a 999px radius turned the whole thing into an odd oval */
+    background:var(--surface); border:1px solid var(--line); border-radius:22px;
+    padding:8px 10px 9px; box-shadow:0 10px 34px rgba(0,0,0,.3);
     transform:translateY(var(--kb, 0px)); transition:transform .18s ease-out;
   }
   .cbtn{flex:none; width:34px; height:34px; border-radius:50%; border:0;
@@ -2104,6 +2106,7 @@ function parseLocal(text){
       useMyLocation:NEARME.test(t)||!evPlaces.length, explicitNear:NEARME.test(t),
       between:false, party:null, openNow:false,
       evWhen:/\btonight\b|\bthis evening\b|\btoday\b/.test(t)?'tonight'
+            :/\bnext weekend\b/.test(t)?'nextweekend'
             :/\bweekend\b/.test(t)?'weekend':'all',
       reply:null, via:'built in', wantsAfter:false, _strong:true};
   }
@@ -2571,10 +2574,11 @@ function runPlan(plan){
     if(plan.evWhen==='tonight'){
       const end=new Date(); end.setHours(29,59,59,0);           // tonight runs past midnight
       evs=evs.filter(e=>Date.parse(e.start)<=+end);
-    } else if(plan.evWhen==='weekend'){
+    } else if(plan.evWhen==='weekend'||plan.evWhen==='nextweekend'){
       const d=new Date(), day=d.getDay();
       const fri=new Date(d); fri.setDate(d.getDate()+((5-day+7)%7)); fri.setHours(0,0,0,0);
       if(day===6||day===0) fri.setDate(fri.getDate()-7);        // already inside the weekend
+      if(plan.evWhen==='nextweekend') fri.setDate(fri.getDate()+7);
       const sun=new Date(fri); sun.setDate(fri.getDate()+2); sun.setHours(29,59,59,0);
       evs=evs.filter(e=>{const s0=Date.parse(e.start); return s0>=+fri && s0<=+sun;});
     } else evs=evs.filter(e=>Date.parse(e.start)<=now+14*86400e3);
@@ -2582,7 +2586,8 @@ function runPlan(plan){
       const da=a.lat?dist(origin.pt,[a.lat,a.lng]):99, db=b.lat?dist(origin.pt,[b.lat,b.lng]):99;
       return (da-db)||(Date.parse(a.start)-Date.parse(b.start));
     });
-    const label=plan.evWhen==='tonight'?'tonight':plan.evWhen==='weekend'?'this weekend':'in the next two weeks';
+    const label=plan.evWhen==='tonight'?'tonight':plan.evWhen==='weekend'?'this weekend'
+      :plan.evWhen==='nextweekend'?'next weekend':'in the next two weeks';
     if(!plan.reply) plan.reply=evs.length
       ? evs.length+' event'+(evs.length>1?'s':'')+' '+label+(origin?' — nearest to '+origin.label+' first':' — soonest first')
       : EVENTS.length
