@@ -16,7 +16,9 @@
 
 import { getStore } from '@netlify/blobs';
 
-export const config = { schedule: '*/5 * * * *' };
+/* NOT scheduled. Netlify blocks HTTP access to scheduled functions with a
+   403, and the app must be able to READ this over HTTP. cron.mjs is the
+   scheduled function and it pokes this one. Do not add a schedule here. */
 
 const KEY = 'editorial-v1';
 const CKEY = 'editorial-cursor-v1';

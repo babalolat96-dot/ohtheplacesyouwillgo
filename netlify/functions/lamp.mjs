@@ -20,7 +20,9 @@
 
 import { getStore } from '@netlify/blobs';
 
-export const config = { schedule: '*/5 * * * *' };
+/* NOT scheduled. Netlify blocks HTTP access to scheduled functions with a
+   403, and the app must be able to READ this over HTTP. cron.mjs is the
+   scheduled function and it pokes this one. Do not add a schedule here. */
 
 /* Angus's 700 places, inlined deliberately. A bare .mjs sitting beside the
    functions is treated by Netlify as its own function, and a file with no
