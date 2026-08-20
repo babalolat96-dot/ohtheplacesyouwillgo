@@ -1516,6 +1516,7 @@ const S = {plan:null, sug:null, anchorPlace:null, planWhen:null, q:'', vibes:new
            favs:new Set(), favOnly:false, _taste:null};
 const BANDS=[['£','£ under ~15'],['££','££ 15-35'],['£££','£££ 35-70'],['££££','££££ 70+'],['Free','Free']];
 const SRCS=[['sitch',"so what's the sitch"],['olaloye',"Olaloye's list"],
+            ['lamp',"Angus's list"],
             ['insta','From Instagram'],['mine','Saved by you']];
 const CUISINES=(()=>{const c={};DATA.forEach(d=>{if(d.cui)c[d.cui]=(c[d.cui]||0)+1;});
   return Object.entries(c).filter(([k,n])=>n>=3 && !/^(restaurant|other)$/i.test(k)).sort((a,b)=>b[1]-a[1]).map(([k])=>k);})();
@@ -2260,10 +2261,31 @@ function stopMatches(st){
     if(st.maxBand && d.band && d.band!=='Free'){
       if(BANDORDER.indexOf(d.band) > BANDORDER.indexOf(st.maxBand)) return false;
     }
-    if(st.tags && st.tags.length && !st.tags.some(t=>d.tags.includes(t))) return false;
+    /* Tag filtering used to be exact and final: a place whose own words said
+       "listening bar" but which carried no 'listening' TAG was thrown out
+       before the text matcher ever saw it. Tags are curated by hand and always
+       incomplete, so the written word gets a vote too. */
+    if(st.tags && st.tags.length && !st.tags.some(t=>d.tags.includes(t))){
+      const words=st.tags.map(t=>TAGTEXT[t]).filter(Boolean);
+      if(!words.length) return false;
+      const txt=textOf(d);
+      if(!words.some(ws=>ws.some(w=>txt.includes(w)))) return false;
+    }
     return true;
   });
 }
+/* the words that mean a tag, for places the tag was never applied to */
+const TAGTEXT={
+  'date-night':['date','romantic','intimate','candle'],
+  late:['late night','til late','till late','2am','3am','after hours'],
+  livemusic:['live music','live band','gig','jazz','dj '],
+  listening:['listening bar','hi-fi','hifi','vinyl','record','sound system','soundsystem'],
+  free:['free entry','no entry fee','free to'],
+  matcha:['matcha'],
+  green:['park','garden','picnic','green space','riverside','canal'],
+  summer:['rooftop','roof terrace','terrace','courtyard','beer garden','outdoor'],
+  special:['special occasion','anniversary','celebration','tasting menu','birthday'],
+};
 function findVenue(name){
   const t=String(name||'').toLowerCase().trim();
   if(t.length<3) return null;
@@ -2824,6 +2846,24 @@ async function applyHours(result){
 }
 
 function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); }
+
+/* ---- Angus's list (Lamp), resolved server-side and merged at boot ----
+   700 names with no city attached: the importer geocodes them against Google
+   and keeps the London half here, so they arrive without rebuilding the app.
+   Angus's own note leads the record — it is why the place is on the map. */
+async function loadLamp(){
+  try{
+    const r=await fetch('/api/lamp',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'list'})});
+    const j=await r.json();
+    if(!j || !Array.isArray(j.places)) return;
+    let added=0;
+    j.places.forEach(p=>{ if(p && p.lat && !inBank(p.n)){ addToBoard(p); added++; } });
+    if(added){ refreshSrcChips(); updateBankCount(); if(!S.plan) render(); }
+    if(j.progress && j.progress.done < j.progress.total)
+      console.info('[lamp] '+j.progress.done+' of '+j.progress.total+' resolved so far');
+  }catch(e){ /* the bank still works without it */ }
+}
 
 /* ---- the understanding layer: what each place is ACTUALLY like ----
    A background job reads reviews and editorial for every place in the bank and
@@ -4917,6 +4957,7 @@ homeView();
 locate(true);
 loadSaved();          // whatever you saved on any device
 loadEvents();         // what's on — scouted weekly into the feed
+loadLamp();           // Angus's places, as the importer resolves them
 postRoster();         // tell the understanding engine what the bank holds
 </script>
 </body>

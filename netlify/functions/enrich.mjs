@@ -16,11 +16,14 @@
 
 import { getStore } from '@netlify/blobs';
 
-export const config = { schedule: '*/10 * * * *' };
+export const config = { schedule: '*/5 * * * *' };
 
 const KEY = 'enrich-v1';          // { slug: record }
 const QKEY = 'enrich-queue-v1';   // names the app has asked to jump the queue
-const PER_RUN = 4;                // places per run — inside the 10s budget
+/* 6 per run every 5 minutes = ~72/hour, so a bank of ~850 (501 + Angus's
+   London places) is fully understood in about twelve hours rather than
+   thirty-five. Six parallel read+distil pairs still fit the 10s budget. */
+const PER_RUN = 6;
 const STALE_DAYS = 120;           // a re-read this old is worth refreshing
 
 const MODEL_KEYS = ['ANTHROPIC_API_KEY','OTP_MODEL_KEY','CLAUDE_API_KEY','ANTHROPIC_KEY','BABLOAPI','API_KEY'];
