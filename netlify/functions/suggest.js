@@ -137,7 +137,7 @@ const SCHEMA = {
             area: { type: 'string', description: 'Neighbourhood, e.g. Notting Hill.' },
             street: { type: 'string', description: 'Street address if you know it, e.g. "29 Romilly Street". This is what lets the place be confirmed, so give it whenever you know it. Leave empty rather than guess.' },
             kind: { type: 'string', enum: ['eat', 'drink', 'coffee', 'outdoors', 'culture', 'shop'] },
-            why: { type: 'string', description: 'One short line on why it fits. Under 18 words.' },
+            why: { type: 'string', description: 'One short line on why it fits, about the PLACE — its character, room, what it serves. Under 18 words. NEVER mention opening hours, closing times, or how late it stays open: you do not know them and they are checked separately.' },
             confident: { type: 'boolean', description: 'False if you are unsure this place is currently open or exists under this name.' },
           },
           required: ['name', 'kind', 'why'],
@@ -162,7 +162,98 @@ Rules:
   place to be confirmed, and small or new bars are often in no public register.
   Do not invent one; an empty street is better than a wrong one.
 - A bar inside, above or below another venue is a good answer. Give the building's
-  address in street, and say the relationship in why.`;
+  address in street, and say the relationship in why.
+
+HOURS ARE NOT YOURS TO CLAIM. Never write "open till 3am", "late hours", "open
+late", "serves till dawn" or any variation, in the why field or anywhere else. Opening
+times are looked up from the live register after you answer, and a claim of
+yours that contradicts them is a lie the user sees. If lateness is what was
+asked for, name places you believe genuinely trade at that hour and say WHY the
+place is good — the hours check is done for you.`;
+
+/* ---- hours, from Google, never from the model ----
+   A suggestion that does not actually open when the user asked is not a
+   suggestion. We hold the place id from googleCheck, so one Details call
+   settles it. Where Google genuinely has no hours we say so rather than
+   guess: "couldn't check" is an honest answer, an invented one is not. */
+const DAYNAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function tmin(h, m, mer) {
+  h = +h; m = m ? +m : 0;
+  if (mer) { const q = mer[0].toLowerCase();
+    if (q === 'p' && h < 12) h += 12;
+    if (q === 'a' && h === 12) h = 0; }
+  return h * 60 + m;
+}
+// same reader as the app: Google mixes 24h, "5:00 – 11:00 PM" and "12:00 AM"
+function parseWeek(lines) {
+  const out = {};
+  (lines || []).forEach(raw => {
+    const line = String(raw).replace(/[\u00a0\u2009\u202f\u2007\u3000]/g, ' ').replace(/[\u2010-\u2015\u2212]/g, '-');
+    const i = line.indexOf(':'); if (i < 0) return;
+    const di = DAYNAMES.findIndex(d => d.toLowerCase() === line.slice(0, i).trim().toLowerCase());
+    if (di < 0) return;
+    const rest = line.slice(i + 1).trim();
+    if (/closed/i.test(rest)) { out[di] = []; return; }
+    if (/24\s*hours|24\/7/i.test(rest)) { out[di] = [[0, 1440]]; return; }
+    const spans = [];
+    rest.split(',').forEach(part => {
+      const toks = [];
+      const re = /(\d{1,2})(?::(\d{2}))?\s*([ap])\.?\s*m\.?/gi;
+      const bare = /(\d{1,2}):(\d{2})/g;
+      let m;
+      while ((m = re.exec(part))) toks.push({ h: m[1], m: m[2], mer: m[3], at: m.index });
+      if (toks.length < 2) {
+        while ((m = bare.exec(part))) {
+          if (toks.some(t => Math.abs(t.at - m.index) < 3)) continue;
+          toks.push({ h: m[1], m: m[2], mer: null, at: m.index });
+        }
+        toks.sort((x, y) => x.at - y.at);
+      }
+      if (toks.length < 2) return;
+      const st = toks[0], en = toks[1];
+      let a, b = tmin(en.h, en.m, en.mer);
+      if (!st.mer && en.mer) {
+        a = tmin(st.h, st.m, en.mer);
+        if (a >= b) { const alt = tmin(st.h, st.m, en.mer[0].toLowerCase() === 'p' ? 'a' : 'p'); if (alt < b) a = alt; }
+      } else a = tmin(st.h, st.m, st.mer);
+      spans.push(a === b ? [0, 1440] : [a, b]);
+    });
+    if (spans.length) out[di] = spans;
+  });
+  return out;
+}
+function openAtWeek(week, dow, mins) {
+  if (!week) return null;
+  const today = week[dow], yest = week[(dow + 6) % 7];
+  if (today === undefined && yest === undefined) return null;
+  for (const [a, b] of (today || [])) if (b > a ? (mins >= a && mins < b) : (mins >= a)) return true;
+  for (const [a, b] of (yest || [])) if (b <= a && mins < b) return true;   // ran past midnight
+  return false;
+}
+function closesOnWeek(week, dow) {
+  const spans = week && week[dow];
+  if (!spans || !spans.length) return null;
+  let best = null;
+  for (const [a, b] of spans) { const end = b > a ? b : b + 1440; if (best === null || end > best) best = end; }
+  return best;
+}
+const hhmm = m => String(Math.floor(m / 60) % 24).padStart(2, '0') + ':' + String(m % 60).padStart(2, '0');
+
+async function realHours(placeId) {
+  const key = googleKey();
+  if (!key || !placeId) return null;
+  try {
+    const r = await fetch('https://places.googleapis.com/v1/places/' + encodeURIComponent(placeId) +
+      '?languageCode=en-GB&regionCode=GB', {
+      headers: { 'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'regularOpeningHours,currentOpeningHours,businessStatus' } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const h = d.currentOpeningHours || d.regularOpeningHours;
+    if (!h || !h.weekdayDescriptions) return null;
+    return { week: parseWeek(h.weekdayDescriptions), status: d.businessStatus || null };
+  } catch (e) { return null; }
+}
 
 const norm = s => (s || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]/g, '');
 const STOP = new Set(['the', 'and']);
@@ -302,6 +393,20 @@ exports.handler = async (event) => {
   }
   const when = body.when ? String(body.when).slice(0, 60) : null;
   const openNow = body.openNow === true;
+  /* the moment the answer has to survive. Sent as an ISO instant by the app;
+     converted to London wall-clock, because that is what Google's week means. */
+  let needAt = null;
+  if (body.needAt) {
+    const t = new Date(String(body.needAt));
+    if (!isNaN(t)) {
+      const f = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London',
+        weekday: 'long', hour: '2-digit', minute: '2-digit', hour12: false })
+        .formatToParts(t).reduce((o, x) => (o[x.type] = x.value, o), {});
+      const dow = DAYNAMES.findIndex(d => d === f.weekday);
+      if (dow >= 0) needAt = { dow, mins: (+f.hour) * 60 + (+f.minute),
+                               label: f.weekday + ' ' + f.hour + ':' + f.minute };
+    }
+  }
   let nearLine = '';
   if (near) {
     nearLine = `\n\nThe user is at ${near.label} (${near.lat.toFixed(4)}, ${near.lng.toFixed(4)}) right now. ` +
@@ -343,14 +448,42 @@ exports.handler = async (event) => {
       if (!hit && p.street) hit = await geoCheck(p.name, p.street, p.area);
       if (!hit) hit = await geoCheck(p.name, null, p.area);
       if (!hit) return null;
+      /* strip any hours talk the model smuggled in anyway — the facts below
+         are the only place hours may come from */
+      const why = String(p.why || '').replace(
+        /[^.]*\b(open|serving|serves|going)\b[^.]{0,30}\b(late|past|till|until|after)\b[^.]*\.?/gi, '').trim()
+        || String(p.why || '').replace(/\b(open|opens)\b[^.]{0,20}\d{1,2}\s*(am|pm)/gi, '').trim();
       return {
-        name: hit.name || p.name, kind: p.kind, why: p.why, area: p.area || null,
+        name: hit.name || p.name, kind: p.kind, why, area: p.area || null,
         address: hit.address, postcode: hit.postcode, lat: hit.lat, lng: hit.lng,
         placeId: hit.placeId || null,
         via: hit.via, confident: p.confident !== false,
       };
     }));
     let places = checked.filter(Boolean);
+
+    /* ---- the hours gate ----
+       If the ask carried a time, a place that does not actually open then is
+       not an answer. Check every candidate against Google's own hours and
+       DROP the ones that fail. Where Google has no hours at all, keep the
+       place but mark it unchecked so the card can say so out loud. */
+    let droppedShut = [], unchecked = 0;
+    if (needAt) {
+      const judged = await Promise.all(places.map(async q => {
+        if (!q.placeId) { q.hoursKnown = false; unchecked++; return q; }
+        const h = await realHours(q.placeId);
+        if (!h || !h.week || !Object.keys(h.week).length) { q.hoursKnown = false; unchecked++; return q; }
+        q.hoursKnown = true;
+        q.openThen = openAtWeek(h.week, needAt.dow, needAt.mins);
+        const co = closesOnWeek(h.week, needAt.dow);
+        q.closesAt = co != null ? hhmm(co % 1440) : null;
+        return q;
+      }));
+      places = judged.filter(q => {
+        if (q.hoursKnown && q.openThen === false) { droppedShut.push(q.name + (q.closesAt ? ' (shuts ' + q.closesAt + ')' : '')); return false; }
+        return true;
+      });
+    }
     /* the model may name somewhere plausible that verifies at its REAL address
        across town. When the ask is anchored, an answer 10km away is not an
        answer — drop it rather than pretend it is local. */
@@ -363,7 +496,9 @@ exports.handler = async (event) => {
       };
       places = places.filter(p => !Number.isFinite(+p.lat) || km(p) <= 6);
     }
-    const out = { places, model, proposed: raw.length, verified: places.length };
+    const out = { places, model, proposed: raw.length, verified: places.length,
+                  droppedShut, uncheckedHours: unchecked,
+                  checkedAt: needAt ? needAt.label : null };
     if (body.debug) out.raw = raw;
     return { statusCode: 200, headers, body: JSON.stringify(out) };
   } catch (e) {

@@ -997,6 +997,7 @@ body.detail-open .mobtab{display:none}
 .favmark{color:#e0245e; font-size:12px}
 .card.mine .pin{box-shadow:0 0 0 2px var(--accent)}
 .tag.mine{background:var(--accent); color:var(--accent-ink); border-color:var(--accent)}
+.tag.bust{background:#7a2622; color:#fff; border-color:#7a2622}
 .savebtn{margin-left:auto; align-self:flex-start; border:1px solid var(--line);
   background:var(--surface-2); color:var(--ink); border-radius:8px; padding:5px 10px;
   font-size:12px; cursor:pointer; white-space:nowrap}
@@ -2077,6 +2078,25 @@ const OPENNOW=/\b(open (now|late|rn|right now|tonight|at this (time|hour))|still
 /* the outside layer: nights, gigs, festivals. "party of 6" is a table size,
    "parties" is a Saturday — the regex is deliberately noun-plural about it */
 const EVENTWORDS=/\b(what'?s (on|happening|going on)|whats (on|happening)|any events?|events? (on|near|tonight|this|next|around)|gigs?|raves?|club nights?|parties|lineups?|line-ups?|festivals?|anything (happening|going on))\b/;
+/* ---- what someone wants to DO, and what can satisfy it ----
+   Keyword lists are why "I want to dance on Friday" never reached the events
+   feed: no "gig", no "what's on", so nothing connected. This maps the ACTIVITY
+   to the kinds of answer that serve it, so the link is made by meaning.
+   'strong' = the events feed is the answer. 'blend' = venues answer it, but a
+   night that is on is part of the answer too, and must be offered. */
+const ACTIVITY=[
+  [/\b(dance|dancing|danc(e|ing) floor|rave|raving|clubbing|go clubbing|a club night|big night out|sesh|shell? down|jump around)\b/, 'strong', 'drink'],
+  [/\b(dj|djs|set|lineup|line-up|b2b|all[- ]?nighter|after ?party|afters)\b/, 'strong', 'drink'],
+  [/\b(amapiano|afrobeat|afro ?house|afrotech|gqom|3[- ]?step|piano|house music|garage|jungle|dnb|drum and bass|techno|dub|reggae|soca|baile)\b/, 'strong', 'drink'],
+  [/\b(live music|gig|band playing|see a band|jazz night|open mic|concert|karaoke)\b/, 'strong', 'drink'],
+  [/\b(festival|carnival|block party|street party|day party|daytime rave)\b/, 'strong', 'outdoors'],
+  [/\b(exhibition|gallery opening|private view|late opening|museum late)\b/, 'blend', 'culture'],
+  [/\b(night out|out out|big one|proper night|going out out)\b/, 'blend', 'drink'],
+];
+function activityFrom(t){
+  for(const [re,weight,kind] of ACTIVITY) if(re.test(t)) return {weight, kind};
+  return null;
+}
 const BANDORDER=['£','££','£££','££££'];
 
 function findPlaces(t){
@@ -2194,12 +2214,21 @@ function parseLocal(text){
     useMyLocation:false, between:false, party:null,
     reply:null, via:'built in', wantsAfter:true, _strong:true};
   /* an events ask is its own thing: it reads the feed, not the bank */
-  if(EVENTWORDS.test(t)){
+  /* an events question is a question about what you want to DO, not about
+     whether you happened to use the word "gig". Wanting to dance IS asking
+     what is on. */
+  const act=activityFrom(t);
+  if(EVENTWORDS.test(t) || (act && act.weight==='strong')){
     const evPlaces=findPlaces(t);
+    // a named day ("on friday") is a real window, not "sometime in a fortnight"
+    const evDayIdx=DAYS.findIndex(d=>new RegExp('\\b'+d.toLowerCase()+'\\b').test(t));
     return {eventsAsk:true, stops:[], venues:[], locations:evPlaces.map(p=>p.name),
       useMyLocation:NEARME.test(t)||!evPlaces.length, explicitNear:NEARME.test(t),
       between:false, party:null, openNow:false,
-      evWhen:/\btonight\b|\bthis evening\b|\btoday\b/.test(t)?'tonight'
+      activity:act?act.kind:null,
+      evDay:evDayIdx>=0?evDayIdx:null,
+      evWhen:evDayIdx>=0?'day'
+            :/\btonight\b|\bthis evening\b|\btoday\b/.test(t)?'tonight'
             :/\bnext weekend\b/.test(t)?'nextweekend'
             :/\bweekend\b/.test(t)?'weekend':'all',
       reply:null, via:'built in', wantsAfter:false, _strong:true};
@@ -2250,6 +2279,9 @@ function parseLocal(text){
   };
   /* is this an occasion being planned, or one thing needed right now? */
   plan.wantsAfter = !openAsk && (stops.length>=2 || PLANWORDS.test(t));
+  /* a "night out" answers with venues, but a night that IS on belongs in the
+     answer too — offered, never withheld because the wording was not "gig" */
+  if(act && act.weight==='blend') plan.blendEvents=true;
   /* the words the query leaves behind — searched against what is written about
      each place, so "small plates" and "authentic" stop being invisible */
   /* strip the areas and cuisines already understood, so only genuinely
@@ -2331,6 +2363,23 @@ function findVenue(name){
 /* The model named a venue we do not hold. Ask Google who and where it is,
    rather than quietly falling back to the area name and anchoring on
    whatever in the bank happens to contain that word. */
+/* The model judged the INTENT: it decided this is a question about something
+   happening, not somewhere to sit. Turn that into a real events plan, with
+   whatever window it heard. This is the path for everything the local
+   activity table does not know — the vocabulary of a night out is endless. */
+function applyEventsIntent(plan, t){
+  if(!plan || plan.eventsAsk!==true) return;
+  const said=String(plan.eventsDay||'').toLowerCase()+' '+String(t||'');
+  const dayIdx=DAYS.findIndex(d=>new RegExp('\\b'+d.toLowerCase()+'\\b').test(said));
+  plan.evDay=dayIdx>=0?dayIdx:null;
+  plan.evWhen = dayIdx>=0 ? 'day'
+    : /\btonight\b|\bthis evening\b|\btoday\b/.test(said) ? 'tonight'
+    : /\bnext weekend\b/.test(said) ? 'nextweekend'
+    : /\bweekend\b/.test(said) ? 'weekend' : 'all';
+  plan.stops=[]; plan.wantsAfter=false;
+  if(!plan.locations) plan.locations=[];
+  if(!plan.locations.length && !plan.useMyLocation) plan.useMyLocation=true;
+}
 async function resolveVenues(plan){
   const names=(plan.venues||[]).filter(Boolean).slice(0,2);
   if(!names.length) return;
@@ -2752,13 +2801,23 @@ function runPlan(plan){
       if(plan.evWhen==='nextweekend') fri.setDate(fri.getDate()+7);
       const sun=new Date(fri); sun.setDate(fri.getDate()+2); sun.setHours(29,59,59,0);
       evs=evs.filter(e=>{const s0=Date.parse(e.start); return s0>=+fri && s0<=+sun;});
+    } else if(plan.evWhen==='day' && plan.evDay!=null){
+      /* "on friday" means that night, and a night runs past midnight */
+      const d0=new Date();
+      let add=(plan.evDay-d0.getDay()+7)%7;
+      if(add===0 && d0.getHours()>=6) add=7;          // today, but the day is spent
+      const from=new Date(d0); from.setDate(d0.getDate()+add); from.setHours(6,0,0,0);
+      const to=new Date(from); to.setDate(from.getDate()+1); to.setHours(5,59,59,0);
+      evs=evs.filter(e=>{const s0=Date.parse(e.start); return s0>=+from && s0<=+to;});
     } else evs=evs.filter(e=>Date.parse(e.start)<=now+14*86400e3);
     if(origin) evs.sort((a,b)=>{
       const da=a.lat?dist(origin.pt,[a.lat,a.lng]):99, db=b.lat?dist(origin.pt,[b.lat,b.lng]):99;
       return (da-db)||(Date.parse(a.start)-Date.parse(b.start));
     });
     const label=plan.evWhen==='tonight'?'tonight':plan.evWhen==='weekend'?'this weekend'
-      :plan.evWhen==='nextweekend'?'next weekend':'in the next two weeks';
+      :plan.evWhen==='nextweekend'?'next weekend'
+      :plan.evWhen==='day'&&plan.evDay!=null?('on '+DAYS[plan.evDay])
+      :'in the next two weeks';
     if(!plan.reply) plan.reply=evs.length
       ? evs.length+' event'+(evs.length>1?'s':'')+' '+label+(origin?' — nearest to '+origin.label+' first':' — soonest first')
       : EVENTS.length
@@ -2766,6 +2825,9 @@ function runPlan(plan){
         : 'The events feed is empty — the weekly scout hasn’t filled it yet.';
     const result={type:'events', rows:evs.slice(0,30), origin, plan};
     S.plan=result; S.planWhen=null;
+    /* an event is a place AND a time. Knowing what is open around it before
+       and after is the whole point of having both layers. */
+    if(evs.length) attachAround(result);
     if(origin){ S.me=origin.pt; S.meLabel=origin.label; radiusSel.disabled=false; drawMe(); }
     render();
     drawRoute(null); drawSugMarkers([]); drawEventMarkers(result.rows);
@@ -2938,7 +3000,7 @@ async function applyHours(result){
       withClose.sort((a,b)=>b.co-a.co);
       const c=withClose[0]||shut[0];
       result.plan.reply='Straight with you — nothing in your bank here is open '+atTxt+'. '
-        +(c.co ? 'The latest is '+c.d.n+', till '+hhmm(c.co%1440)+'. '
+        +(c.co ? 'The latest is '+c.d.n+', and it shuts at '+hhmm(c.co%1440)+'. '
                : 'The closest would be '+c.d.n+(c.d.hood||c.d.area?' in '+(c.d.hood||c.d.area):'')+', shut then too. ')
         +'Looking beyond it…';
       result.allShut=true;
@@ -2955,13 +3017,42 @@ async function applyHours(result){
   /* a night-time ask is also an EVENTS question — club nights ARE the late
      answer. Cross the layers instead of leaving them in silos. */
   const hr=when.getHours();
-  if((hr>=21 || hr<=5) && typeof EVENTS!=='undefined' && EVENTS.length){
+  /* a night that is ON belongs in a night-shaped answer. Either the hour says
+     so, or the ask itself was about going out — "a proper night out" needs the
+     feed as much as "what's on" does. */
+  if((hr>=21 || hr<=5 || (result.plan&&result.plan.blendEvents))
+      && typeof EVENTS!=='undefined' && EVENTS.length){
     result.nightEvents=eventsForNight(when, result.origin);
     if(result.nightEvents.length && result.allShut)
       result.plan.reply=result.plan.reply.replace(' Looking beyond it…',
         ' But '+(result.nightEvents.length===1?'one night that IS on':result.nightEvents.length+' nights that ARE on')+
         ' — below, with what Google knows. Looking beyond it…');
   }
+  render();
+}
+/* What is open around the night you are actually going to? An event has a
+   place and a start time; the useful companion facts are where you can drink
+   beforehand and what is still serving when you come out. Both checked at the
+   real hour, never assumed. */
+async function attachAround(result){
+  const ev=(result.rows||[]).find(e=>e.lat && e.start);
+  if(!ev) return;
+  const start=new Date(ev.start); if(isNaN(start)) return;
+  const before=new Date(start.getTime()-90*60000);          // a drink first
+  const after=new Date(start.getTime()+4*3600000);          // coming out
+  const near=DATA.filter(d=>d.lat && ['drink','eat','coffee'].includes(d.c)
+    && dist([ev.lat,ev.lng],[d.lat,d.lng])<1.1)
+    .map(d=>({d, km:dist([ev.lat,ev.lng],[d.lat,d.lng])}))
+    .sort((a,b)=>a.km-b.km).slice(0,10).map(x=>x.d);
+  if(!near.length) return;
+  result.aroundPending=true; render();
+  await hydrateHours(near, 8);
+  if(S.plan!==result) return;
+  result.aroundPending=false;
+  const pick=(when,n)=>near.map(d=>({d, st:openState(d.n, when)}))
+    .filter(x=>x.st && x.st.open).slice(0,n);
+  result.around={ev, before:pick(before,3), after:pick(after,3),
+                 beforeAt:before, afterAt:after};
   render();
 }
 /* the "night of" a moment: 18:00 that evening to 07:00 the morning after */
@@ -3234,6 +3325,11 @@ async function fetchSuggestions(text, known, auto){
         {weekday:'long', hour:'numeric', minute:'2-digit', hour12:true});
       if(p0&&p0.openNow) payload.openNow=true;
     }
+    /* the moment the answer has to survive. The server checks every candidate
+       against Google's real hours and drops the ones that do not open then —
+       a suggestion that is shut when you asked is not a suggestion. */
+    const needAt=S.planWhen||((p0&&p0.openNow)?new Date():null);
+    if(needAt) payload.needAt=needAt.toISOString();
     const r=await fetch('/api/suggest',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(payload)});
     const d=await r.json();
@@ -3241,7 +3337,9 @@ async function fetchSuggestions(text, known, auto){
     /* the model came back empty. If this reads like a venue name, ask Google
        straight out, rather than telling them nothing exists. */
     if(!places.length && looksLikeName(text)) places=await googleFind(text);
-    S.sug={loading:false, places, proposed:d.proposed, verified:d.verified, auto:!!auto};
+    S.sug={loading:false, places, proposed:d.proposed, verified:d.verified, auto:!!auto,
+           droppedShut:d.droppedShut||[], uncheckedHours:d.uncheckedHours||0,
+           checkedAt:d.checkedAt||null};
   }catch(e){
     const places=looksLikeName(text)?await googleFind(text):[];
     S.sug={loading:false, places, failed:!places.length, auto:!!auto};
@@ -3256,13 +3354,37 @@ async function fetchSuggestions(text, known, auto){
     hydrateHours(withPin.map(p=>({n:p.name, lat:p.lat, lng:p.lng, gid:p.placeId||p.id||null})), 4)
       .then(()=>{
         if(S.sug!==mine) return;                    // a newer search took over
-        if(S.plan && S.plan.plan && S.plan.plan.openNow){
-          const sc=p=>{ const st=openState(p.name); return st===null?1:(st.open?0:2); };
+        const p0=S.plan&&S.plan.plan;
+        /* judge them at the time that was ASKED FOR. Badging a 3am ask against
+           "now" is how a place that IS open at 3am ends up labelled Closed. */
+        const when=S.planWhen||new Date();
+        const timed=!!(p0&&(p0.openNow||S.planWhen));
+        if(timed){
+          mine.when=when;
+          mine.places.forEach(p=>{
+            /* the server already ruled on this one, by place id, against
+               Google's own week. Do not second-guess it by name. */
+            if(p.hoursKnown===false){ p._st=null; return; }
+            if(typeof p.openThen==='boolean'){ p._st={open:p.openThen}; return; }
+            p._st=openState(p.name, when);
+            /* the model SAYS it is open late. Google knows whether that is
+               true. Never print a claim next to facts that contradict it. */
+            const claimsLate=/\b(open|serving|going)\b[^.]{0,24}\b(past|after|till|until)\b[^.]{0,12}\d|\blate hours\b|\bafter[- ]hours\b/i
+              .test(p.why||'');
+            const co=closesOn(p.name, when);
+            p._closes=co;
+            const askMin=when.getHours()*60+when.getMinutes()+(when.getHours()<7?1440:0);
+            if(claimsLate && co && co<askMin) p._claimBust=hhmm(co%1440);
+          });
+          const sc=p=>{ const st=p._st; return st===null?1:(st.open?0:2); };
           mine.places=mine.places.slice().sort((a,b)=>sc(a)-sc(b));
           /* honesty carries into the discoveries: if these are all shut too,
              say so at the top instead of letting the cards imply otherwise */
-          const sts=mine.places.map(p=>openState(p.name)).filter(Boolean);
+          const sts=mine.places.map(p=>p._st).filter(Boolean);
           mine.allShut = sts.length>0 && sts.every(st=>!st.open);
+          mine.survivors = mine.places.filter(p=>p._st&&p._st.open).length;
+          /* a place we could not check is not a place we know is shut */
+          if(mine.places.some(p=>p.hoursKnown===false)) mine.allShut=false;
         }
         drawSugMarkers(mine.places); renderPlan();
       });
@@ -3422,14 +3544,27 @@ function sugCard(p){
   el.className='card sug'; el.tabIndex=0;
   /* nearby results carry Google's live open flag; model discoveries fall
      back to whatever hours hydration has learned */
-  const st=p.lat?((typeof p.open==='boolean')?{open:p.open}:openState(p.name)):null;
+  const when=(S.sug&&S.sug.when)||S.planWhen||null;
+  /* if Google lists no hours, we do not know it is shut — say nothing rather
+     than badge a guess. The "unconfirmed" tag carries the truth instead. */
+  const st = p.hoursKnown===false ? null
+    : (typeof p.openThen==='boolean') ? {open:p.openThen}
+    : p.lat?(p._st!==undefined?p._st
+      :((typeof p.open==='boolean')?{open:p.open}:openState(p.name, when||undefined))):null;
+  /* "Closed now" is the wrong word for a plan about 3am */
+  const future=when && Math.abs(when-new Date())>45*60000;
+  const atTxt=future?(String(when.getHours()).padStart(2,'0')+':'+String(when.getMinutes()).padStart(2,'0')):null;
   const away=(S.me&&p.lat)?fmtDist(dist(S.me,[p.lat,p.lng]))+' away':null;
   el.innerHTML='<div class="pin">'+svg(p.kind||'eat')+'</div>'+
     '<div style="min-width:0;flex:1"><h3>'+esc(p.name)+'</h3>'+
     '<p class="meta">'+esc([p.area, p.postcode, away].filter(Boolean).join(' · '))+'</p>'+
     '<p class="snip">'+esc(p.why||'')+'</p>'+
     '<div class="tagrow">'+
-    (st?'<span class="openbadge '+(st.open?'yes':'no')+'">'+(st.open?'Open now':'Closed now')+'</span>':'')+
+    (st?'<span class="openbadge '+(st.open?'yes':'no')+'">'+
+      (st.open?(atTxt?'Open at '+atTxt:'Open now'):(atTxt?'Shut by '+atTxt:'Closed now'))+'</span>':'')+
+    (p.hoursKnown===false?'<span class="tag bust">hours not listed — unconfirmed</span>':'')+
+    (p.openThen===true&&p.closesAt?'<span class="tag">open then · till '+esc(p.closesAt)+'</span>':'')+
+    (p._claimBust?'<span class="tag bust">said late · Google says shuts '+p._claimBust+'</span>':'')+
     '<span class="tag">'+(p.via==='google'?'on Google':p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
     (p.rating?'<span class="tag">'+p.rating+'★'+(p.ratingCount?' ('+p.ratingCount+')':'')+'</span>':'')+
     (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
@@ -3657,6 +3792,7 @@ async function ask(text, fresh){
         const t2=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
         if(OPENNOW.test(t2)) d.plan.openNow=true;
         if(NEARME.test(t2)) d.plan.explicitNear=true;
+        applyEventsIntent(d.plan, t2);
         await resolveVenues(d.plan);
         runPlan(d.plan);
         chaseThin(d.plan, S.plan);
@@ -3723,6 +3859,7 @@ async function ask(text, fresh){
       const t2=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
       if(OPENNOW.test(t2)) d.plan.openNow=true;
       if(NEARME.test(t2)) d.plan.explicitNear=true;
+      applyEventsIntent(d.plan, t2);
       await resolveVenues(d.plan);          // find a named venue we do not hold
       runPlan(d.plan);
       if(!local) chaseThin(d.plan, S.plan);
@@ -3912,7 +4049,15 @@ function renderSuggestions(){
   head.innerHTML='Not in your bank <span class="badge">'+fresh.length+' suggested</span>';
   listEl.appendChild(head);
   listEl.insertAdjacentHTML('beforeend',
-    '<div class="secnote">'+(sg.allShut?'Honestly? These look shut right now too — they\'re here for next time. ':'')+
+    '<div class="secnote">'+(sg.allShut?(sg.when&&Math.abs(sg.when-new Date())>45*60000
+        ? 'Honestly? Checked against Google\'s hours, none of these are open then either — they\'re here for next time. '
+        : 'Honestly? These look shut right now too — they\'re here for next time. '):'')+
+    (sg.checkedAt?'Every one checked against Google\'s own opening hours for <b>'+esc(sg.checkedAt)+'</b>. ':'')+
+    (sg.droppedShut&&sg.droppedShut.length
+      ? '<b>'+sg.droppedShut.length+'</b> more were put forward but are shut then, so they are not shown ('+
+        esc(sg.droppedShut.slice(0,3).join(', '))+'). ' : '')+
+    (sg.uncheckedHours?'<b>'+sg.uncheckedHours+'</b> could not be checked — Google lists no hours for '+
+      (sg.uncheckedHours===1?'it':'them')+', so treat as unconfirmed. ':'')+
     (sg.auto?'Your bank is thin for this one, so the wider search ran on its own. ':'')+
     'The model put these forward and each address was checked against the '+
     'UK food hygiene register. Nobody you trust has vouched for them.</div>');
@@ -4053,6 +4198,39 @@ function renderPlan(){
     const frag=document.createDocumentFragment();
     p.rows.forEach(e=>frag.appendChild(evCard(e, p.origin)));
     listEl.appendChild(frag);
+    /* the link between the two layers, made visible: an event has an hour and
+       an address, so say what is actually open around it */
+    if(p.aroundPending)
+      listEl.insertAdjacentHTML('beforeend','<div class="loadingrow">Checking what is open around it…</div>');
+    else if(p.around){          // render even when BOTH are empty: that is a finding
+      const a=p.around, hm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      listEl.insertAdjacentHTML('beforeend',
+        '<div class="sechead">Around '+esc(a.ev.title.slice(0,40))+'</div>');
+      const row=(label,list,when)=>{
+        if(!list.length) return;
+        listEl.insertAdjacentHTML('beforeend','<div class="secnote">'+label+' ('+hm(when)+')</div>');
+        list.forEach(x=>{
+          const el=document.createElement('div');
+          el.className='after';
+          el.innerHTML='<div class="pin sm" style="background:'+css('--'+x.d.c)+'">'+svg(x.d.c)+'</div>'+
+            '<div class="atext"><h4>'+esc(x.d.n)+'</h4><p class="meta">'+
+            esc([fmtDist(dist([a.ev.lat,a.ev.lng],[x.d.lat,x.d.lng]))+' from the venue',
+                 x.d.cui||x.d.t].filter(Boolean).join(' · '))+'</p></div>'+
+            (x.st.closingAt?'<span class="now">till '+hhmm(x.st.closingAt)+'</span>':'<span class="now">open</span>');
+          el.onclick=()=>openDetail(x.d,true);
+          listEl.appendChild(el);
+        });
+      };
+      row('Before it', a.before, a.beforeAt);
+      row('When you come out', a.after, a.afterAt);
+      /* silence would read as "nothing to say". Say the actual finding. */
+      if(!a.after.length)
+        listEl.insertAdjacentHTML('beforeend','<div class="secnote">Nothing in your bank near the venue '+
+          'is still open when it winds down — that is a night bus, not a nightcap.</div>');
+      if(!a.before.length)
+        listEl.insertAdjacentHTML('beforeend','<div class="secnote">Nothing of yours is open near it '+
+          'beforehand either.</div>');
+    }
     if(EVENTS_META && EVENTS_META.refreshedAt)
       listEl.insertAdjacentHTML('beforeend','<div class="foot"><p style="margin:0">Scouted weekly — last refreshed '+
         esc(new Date(EVENTS_META.refreshedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}))+'.</p></div>');

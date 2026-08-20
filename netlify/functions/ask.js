@@ -83,6 +83,10 @@ const SCHEMA = {
       radiusKm: { type: 'number', description: 'Only if they state a distance or say "walking distance".' },
       party: { type: 'integer', description: 'How many people, if stated. "for two" is 2.' },
       when: { type: 'string', description: 'Any timing mentioned, verbatim, e.g. "tomorrow", "tonight".' },
+      eventsAsk: { type: 'boolean',
+        description: 'True when what they want is an EVENT — something happening at a time, with a lineup or a crowd — rather than a venue to walk into. Judge the intent, not the words. "I want to dance on Friday", "somewhere to hear proper amapiano", "what should I do Saturday night", "is there anything on", "I need a rave" are all true even though none of them say the word "event". "A quiet drink", "dinner somewhere nice", "a coffee near me" are false.' },
+      eventsDay: { type: 'string',
+        description: 'If eventsAsk and they named a day or window, give it verbatim: "friday", "tonight", "this weekend", "next weekend". Empty if they did not.' },
       wantsAfter: { type: 'boolean',
         description: 'True when they are planning an occasion rather than looking for one place right now: a date, a night out, "what can I do after", "where should I take her". False for an immediate single need like "coffee near me" or "I want a drink now".' },
       reply: { type: 'string',
@@ -107,6 +111,9 @@ Rules:
 - "in the middle", "between us", "halfway" -> between=true.
 - If nothing narrows it, return one stop with kind "any".
 - Never put a cuisine in locations, or a place name in cuisines.
+- WANTING TO DANCE IS AN EVENTS QUESTION. So is wanting to hear a genre, see a
+  DJ, or "go out out". A club night is not a venue you wander into — it is a
+  thing happening on a date. Set eventsAsk on the intent, never on the vocabulary.
 - wantsAfter is about intent, not wording. Set it true for anything being planned:
   "somewhere in Soho for the date", "where can I take her", "going to the park,
   what after", "night out in Dalston". Set it false for an immediate single need:
