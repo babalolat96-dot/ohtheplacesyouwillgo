@@ -919,6 +919,12 @@ body.detail-open .mobtab{display:none}
 .ufor{margin:0 0 6px; font-size:12.5px; color:var(--ink-2); line-height:1.5}
 .ufor b{color:var(--ink); font-weight:600}
 .usrc{margin:8px 0 0; font-size:11px; color:var(--ink-3); line-height:1.45}
+.usrc a{color:var(--ink-3)}
+/* the editorial reading sits below the review reading, visually its own voice */
+.under.ed{margin-top:-6px; background:transparent; border-style:dashed}
+.egap{margin:0 0 9px; font-size:13px; line-height:1.55; color:var(--ink)}
+.egap b{display:block; font-size:11px; font-weight:650; text-transform:uppercase;
+  letter-spacing:.05em; color:var(--accent); margin-bottom:3px}
 .afterby{margin:2px 0 14px}
 .afterby h4{margin:0 0 7px; font-size:11.5px; font-weight:650; text-transform:uppercase;
   letter-spacing:.05em; color:var(--ink-3)}
@@ -2129,6 +2135,10 @@ function textOf(d){
   const e=(typeof enrGet==='function')?enrGet(d.n):null;
   if(e) bits.push(e.vibe, e.description, (e.bestFor||[]).join(' '),
     (e.order||[]).join(' '), (e.tags||[]).join(' '));
+  /* the editorial reading is searchable too: "known for" and the story are
+     often the only place a dish or a backstory is written down */
+  const ed=(typeof edGet==='function')?edGet(d.n):null;
+  if(ed) bits.push(ed.claims, ed.story, ed.pressSays, (ed.signature||[]).join(' '));
   d._txt=bits.filter(Boolean).join(' ').toLowerCase();
   return d._txt;
 }
@@ -2752,6 +2762,19 @@ function runPlan(plan){
        answering with nothing. */
     const hints=(stops[0].hints||[]);
     const terms=[...new Set((plan.terms||[]).concat(hints.map(h=>h.replace(/-/g,' '))))];
+    /* An exact multi-word phrase written about a place outranks the category
+       we guessed from a single word: "brown butter cake" reads as a bakery
+       ask, but the cake is on a restaurant's menu. If the phrase is written
+       down somewhere, that somewhere IS the answer. */
+    const phrase=(plan.asked||'').toLowerCase().replace(/[^a-z0-9 ]/g,' ')
+      .split(/\s+/).filter(w=>w.length>2 && !STOPW.has(w)).join(' ');
+    if(phrase.split(' ').length>=2){
+      const exact=DATA.filter(d=>d.lat && textOf(d).includes(phrase));
+      if(exact.length && !exact.every(d=>pool.includes(d))){
+        pool=[...new Set(exact.concat(pool))];
+        plan._phrase=phrase;
+      }
+    }
     if(terms.length){
       const scored=pool.map(d=>({d, s:termScore(d, terms)})).filter(x=>x.s>0);
       /* Two genuine matches beat forty vague ones — precision first, and the
@@ -2880,6 +2903,55 @@ function enrGet(name){
       if(j && Date.now()-(j._got||0) < 30*86400e3){ enrCache.set(name,j); return j; } }
   }catch(e){}
   return null;
+}
+/* the editorial reading: what the place says about itself, what the press
+   said, and the gap between the promise and the experience */
+const EDKEY='otp:v1:ed:';
+const edCache=new Map();
+function edGet(name){
+  if(edCache.has(name)) return edCache.get(name);
+  try{
+    const raw=localStorage.getItem(EDKEY+slugOf(name));
+    if(raw){ const j=JSON.parse(raw);
+      if(j && Date.now()-(j._got||0) < 30*86400e3){ edCache.set(name,j); return j; } }
+  }catch(e){}
+  return null;
+}
+async function edFetch(names){
+  const want=names.filter(n=>!edGet(n)).slice(0,20);
+  if(!want.length) return;
+  try{
+    const r=await fetch('/api/editorial',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'get', names:want})});
+    const d=await r.json();
+    const recs=(d&&d.records)||{};
+    want.forEach(n=>{
+      const rec=recs[slugOf(n)];
+      if(!rec || rec.failed) return;
+      rec._got=Date.now(); edCache.set(n,rec);
+      try{ localStorage.setItem(EDKEY+slugOf(n), JSON.stringify(rec)); }catch(e){}
+    });
+  }catch(e){}
+}
+function edHtml(d){
+  const e=edGet(d.n);
+  if(!e) return '';
+  let h='';
+  /* the gap leads: it is the one line neither the venue nor the reviews can
+     write on their own, and the most useful thing on the card */
+  if(e.gap) h+='<p class="egap"><b>Worth knowing</b> '+esc(e.gap)+'</p>';
+  if(e.story) h+='<p class="ufor"><b>The story</b> '+esc(e.story)+'</p>';
+  if(e.claims) h+='<p class="ufor"><b>They say</b> '+esc(e.claims)+'</p>';
+  if(e.pressSays) h+='<p class="ufor"><b>The press say</b> '+esc(e.pressSays)+'</p>';
+  if((e.signature||[]).length)
+    h+='<p class="ufor"><b>Known for</b> '+esc(e.signature.join(' · '))+'</p>';
+  if(!h) return '';
+  if((e.sources||[]).length)
+    h+='<p class="usrc">Read: '+e.sources.slice(0,4).map(s=>
+      '<a href="'+esc(s.url)+'" target="_blank" rel="noopener">'+esc(s.title||'source')+'</a>').join(' · ')+'</p>';
+  else if(e.read && !e.read.searchKey)
+    h+='<p class="usrc">From the venue’s own site only — no press search is connected yet.</p>';
+  return '<div class="under ed">'+h+'</div>';
 }
 async function enrFetch(names){
   const want=names.filter(n=>!enrGet(n)).slice(0,40);
@@ -3411,7 +3483,32 @@ async function ask(text, fresh){
 
   /* -------- a fresh ask -------- */
   if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawNearbyMarkers([]); drawRoute(null); drawAlts(null); }
-  const local=parseLocal(text);
+  let local=parseLocal(text);
+  /* Nothing recognisable — no kind, no area, no tag — but the words might
+     still be written down somewhere in the bank: a dish from a write-up, a
+     backstory, a name in a note. Search the text before giving up. Two or
+     more matches means it is a search; a single match is a venue lookup, so
+     that is left to looksLikeName below. */
+  if(!local){
+    const terms=termsFrom(text);
+    const phrase=String(text).toLowerCase().replace(/[^a-z0-9 ]/g,' ')
+      .split(/\s+/).filter(w=>w.length>2 && !STOPW.has(w)).join(' ');
+    /* an exact phrase written about a place is an answer even if only ONE
+       place has it — "brown butter cake" IS Bruno if Bruno's write-up says so */
+    let hits=[];
+    if(phrase.split(' ').length>=2)
+      hits=DATA.filter(d=>d.lat && textOf(d).includes(phrase));
+    /* looser: several places share the words. One loose match is more likely a
+       venue name, so that is left to looksLikeName below. */
+    if(!hits.length && terms.length){
+      const loose=DATA.filter(d=>d.lat && termScore(d,terms)>=Math.min(2,terms.length));
+      if(loose.length>=2) hits=loose;
+    }
+    if(hits.length)
+      local={stops:[{kind:'any',cuisines:[],tags:[],hints:[]}], venues:[], locations:[],
+        between:false, useMyLocation:false, party:null, wantsAfter:false,
+        terms:terms.length?terms:[phrase], via:'built in', _strong:true, _textOnly:true, reply:null};
+  }
   /* a bare venue name is "where is this place" — answer it, don't interrogate it */
   if(!local && looksLikeName(text)){ lookup(text); return; }
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
@@ -4592,15 +4689,15 @@ function openDetail(d,fly){
   else if(d.conf==='low') notes.push('Approximate pin: the right street or area, but not confirmed to the door.');
   if(d.aka&&d.aka.length) notes.push('Also written as: '+d.aka.join(', ')+'.');
   if(notes.length) h+='<p class="note">'+notes.map(esc).join('<br>')+'</p>';
-  h+='<div id="underslot">'+enrHtml(d)+'</div>';
+  h+='<div id="underslot">'+enrHtml(d)+edHtml(d)+'</div>';
   h+=afterHtml(d);
   dbody.innerHTML=h;
   dbody.scrollTop=0;
-  /* not read yet? fetch it and paint it in when it lands */
-  if(!enrGet(d.n)) enrFetch([d.n]).then(()=>{
-    const slot=document.getElementById('underslot');
-    if(slot && dname.textContent===d.n) slot.innerHTML=enrHtml(d);
-  });
+  /* not read yet? fetch both layers and paint them in when they land */
+  const paint=()=>{ const slot=document.getElementById('underslot');
+    if(slot && dname.textContent===d.n) slot.innerHTML=enrHtml(d)+edHtml(d); };
+  if(!enrGet(d.n)) enrFetch([d.n]).then(paint);
+  if(!edGet(d.n)) edFetch([d.n]).then(paint);
   dbody.querySelectorAll('.aftbtn').forEach(b=>b.onclick=()=>{
     const d2=DATA[+b.dataset.i];
     if(!d2) return;
@@ -4635,12 +4732,19 @@ function openDetail(d,fly){
   if(window.innerWidth<=860) setTimeout(()=>map.invalidateSize(), 80);
   document.querySelectorAll('.mk.sel').forEach(e=>e.classList.remove('sel'));
   const m=markers.get(d.n);
+  const sel=()=>{ const el=m&&m.getElement(); const k=el&&el.querySelector('.mk');
+                  if(k) k.classList.add('sel'); };
+  const focus=()=>{ if(d.lat && (fly || window.innerWidth<=860))
+                      setTimeout(()=>focusPin(d.lat, d.lng), 60); };
   if(m){
-    cluster.zoomToShowLayer(m,()=>{
-      const el=m.getElement(); if(el) el.querySelector('.mk').classList.add('sel');
-      if(fly || window.innerWidth<=860) setTimeout(()=>focusPin(d.lat, d.lng), 60);
-    });
-  }
+    /* zoomToShowLayer throws if the marker is not currently IN the cluster —
+       which happens whenever a plan has re-drawn the layer with a subset. The
+       card must still open: fall back to focusing the coordinates. */
+    let ok=false;
+    try{ if(cluster.hasLayer(m)){ cluster.zoomToShowLayer(m,()=>{ sel(); focus(); }); ok=true; } }
+    catch(e){ ok=false; }
+    if(!ok){ sel(); focus(); }
+  } else focus();
 }
 document.getElementById('dclose').onclick=()=>{detail.classList.remove('open');
   document.body.classList.remove('detail-open');
