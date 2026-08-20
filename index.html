@@ -901,6 +901,8 @@ body.detail-open .mobtab{display:none}
 .card.sug .pin{background:none !important; border:1.5px dashed var(--ink-3)}
 .card.sug .pin svg{fill:var(--ink-3)}
 .mk.sug{background:var(--surface) !important; border:2px dashed var(--ink-3)}
+.mk.ghost{background:var(--surface) !important; border:1.5px dashed var(--ink-3); opacity:.62}
+.mk.ghost svg{fill:var(--ink-3)}
 .mk.sug svg{fill:var(--ink-3)}
 /* events get their own pin colour — a night, not a place in the bank */
 .mk.ev{background:#7b5cd6 !important}
@@ -2343,6 +2345,32 @@ async function resolveVenues(plan){
     }
   }
 }
+/* "in the middle" used to mean geometry, which lands in a park nobody can
+   reach. Ask TfL for the real journey between the two and meet at the
+   interchange closest to halfway BY TIME. Fired in the background from
+   runPlan; the plan re-runs when the answer lands. */
+function betweenPts(plan){
+  return (plan.locations||[]).map(n=>{
+    const g=GAZ.find(x=>x.name.toLowerCase()===String(n).toLowerCase()) || gazSearch(String(n))[0];
+    return g ? [g.lat,g.lng] : null;
+  }).filter(Boolean);
+}
+async function resolveBetween(plan){
+  const pts=betweenPts(plan);
+  if(pts.length<2) return false;
+  try{
+    const w=whenFrom(plan);
+    const r=await fetch('/api/tfl',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({a:{lat:pts[0][0],lng:pts[0][1]}, b:{lat:pts[1][0],lng:pts[1][1]},
+                           when:w?w.toISOString():null})});
+    const d=await r.json();
+    if(d && !d.error && d.lat){
+      plan._mid={pt:[d.lat,d.lng], name:d.name, tA:d.tA, tB:d.tB, via:d.via};
+      return true;
+    }
+  }catch(e){}
+  return false;
+}
 function planOrigin(plan){
   const vnames=(plan.venues||[]).concat(plan.anchorIsVenue?(plan.locations||[]):[]);
   for(const v of vnames){
@@ -2356,9 +2384,12 @@ function planOrigin(plan){
     const g=GAZ.find(x=>x.name.toLowerCase()===String(n).toLowerCase()) || gazSearch(String(n))[0];
     return g ? [g.lat,g.lng] : null;
   }).filter(Boolean);
-  if(plan.between && pts.length>=2)
+  if(plan.between && pts.length>=2){
+    if(plan._mid)
+      return {pt:plan._mid.pt, label:'around '+plan._mid.name};
     return {pt:[(pts[0][0]+pts[1][0])/2,(pts[0][1]+pts[1][1])/2],
             label:'between '+plan.locations[0]+' and '+plan.locations[1]};
+  }
   if(pts.length) return {pt:pts[0], label:plan.locations[0]};
   if(plan.useMyLocation && S.me) return {pt:S.me, label:'you'};
   if(S.me) return {pt:S.me, label:'you'};
@@ -2386,6 +2417,23 @@ function whenFrom(plan){
     base.setDate(base.getDate()+add); base.setHours(20,0,0,0);
   }
   for(const [re,fn] of WHENWORDS) if(re.test(t)){ base=fn(base||now); break; }
+  /* the small hours belong to TONIGHT. "after 3am", "past 2", "till 4am",
+     "open late" — the person means the night they are about to have, and
+     the whole point of the ask is what survives that hour. */
+  const late=t.match(/\b(?:after|past|from|till|until|til)\s+(\d{1,2})(?::(\d{2}))?\s*am\b/);
+  if(late && +late[1]<=6){
+    const b=base||new Date(now);
+    // 1am now and they say "after 3am": this coming 3am. Daytime: tomorrow's.
+    if(now.getHours()>=7 && (!base || b.getDate()===now.getDate())) b.setDate(b.getDate()+1);
+    b.setHours(+late[1], late[2]?+late[2]:0, 0, 0);
+    return b;
+  }
+  if(/\blate[- ]?night\b|\bafter[- ]hours\b|\bopen late\b|\blate spots?\b/.test(t) && !base){
+    const b=new Date(now);
+    if(now.getHours()>=7){ b.setDate(b.getDate()+1); b.setHours(0,30,0,0); }   // tonight, half past midnight
+    else b.setMinutes(b.getMinutes()+30,0,0);                                  // already deep in it
+    return b;
+  }
   if(tm && base){
     let h=+tm[1]; const mn=tm[2]?+tm[2]:0;
     if(tm[3]==='pm' && h<12) h+=12;
@@ -2667,6 +2715,7 @@ function bankThin(res){
 }
 
 function runPlan(plan){
+  if(typeof hideGhosts==='function') hideGhosts();   // plans own the map
   plan._reg=regionFrom(plan);
   /* "near me" or "what's open" with no fix yet: get one FIRST, then answer.
      Being in Northolt and told about Soho was exactly this hole — the ask
@@ -2740,6 +2789,16 @@ function runPlan(plan){
     return result;
   }
   const origin=planOrigin(plan);
+  /* meet-in-the-middle: show the geometric guess NOW, ask TfL for the fair
+     spot in the background, and re-run onto it when it lands */
+  if(plan.between && origin && !plan._mid && !plan._midTried){
+    plan._midTried=true;
+    resolveBetween(plan).then(ok=>{
+      if(S.plan && S.plan.plan!==plan) return;      // they have moved on
+      if(ok) runPlan(plan);
+      else { plan._midFail=true; render(); }        // honest: the guess stands
+    });
+  }
   let rad=plan.radiusKm || (plan.between ? 4 : origin ? 2 : 0);
   let widened=false;
   const rankAt=(rows,r)=>rows.map(d=>({d, km: origin?dist(origin.pt,[d.lat,d.lng]):null}))
@@ -2853,39 +2912,90 @@ async function applyHours(result){
   const score=d=>{ const st=openState(d.n, when); return st===null?1:(st.open?0:2); };
   result.rows=result.rows.slice().sort((a,b)=>score(a)-score(b));
   result.shutCount=rows.filter(d=>{const st=openState(d.n,when); return st&&!st.open;}).length;
-  /* an "open now" ask answers like a person once the hours are in. Never
-     present a list at 2am that quietly implies everything on it is open —
-     if it's all shut, SAY it's all shut, and name what would have been the
-     call. Honesty beats a confident-looking list that dies on first tap. */
-  if(result.plan && result.plan.openNow && !result.plan._nearbySaid){
+  /* a timed ask answers like a person once the hours are in. Never present a
+     list at 2am — or FOR 3am — that quietly implies everything on it is open.
+     If it's all shut, SAY so, name the one that holds out longest, and go
+     looking beyond the bank unprompted: an ask the bank cannot answer is the
+     moment for discovery, not a dead list. */
+  const timed = result.plan && !result.plan._nearbySaid && (result.plan.openNow || S.planWhen);
+  if(timed){
+    const nowish=!S.planWhen || Math.abs(when-new Date())<45*60000;
+    const atTxt = nowish ? 'right now'
+      : 'at '+String(when.getHours()).padStart(2,'0')+':'+String(when.getMinutes()).padStart(2,'0');
     const known=result.rows.map(d=>({d, st:openState(d.n, when)})).filter(x=>x.st);
     const open=known.filter(x=>x.st.open), shut=known.filter(x=>!x.st.open);
     const kmTo=d=>(S.me&&d.lat)?fmtDist(dist(S.me,[d.lat,d.lng]))+' away':null;
     if(open.length){
-      const f=open[0];
-      result.plan.reply=(open.length===1?'One place':open.length+' places')+' near you '
-        +(open.length===1?'looks':'look')+' open right now — '+f.d.n
+      const f=open[0], co=closesOn(f.d.n, when);
+      result.plan.reply=(open.length===1?'One place':open.length+' places')+' here '
+        +(open.length===1?'makes':'make')+' it — '+f.d.n
         +(kmTo(f.d)?', '+kmTo(f.d):'')
-        +(f.st.closingAt?', open until '+hhmm(f.st.closingAt):'')+'.';
-      if(shut.length) result.plan.reply+=' The rest further down are shut at this hour.';
+        +(co?', open till '+hhmm(co%1440):'')+'.';
+      if(shut.length) result.plan.reply+=' The rest are shut '+atTxt+', so they sit below.';
     } else if(shut.length){
-      const c=shut[0];
-      result.plan.reply='Straight with you — nothing near you looks open right now. '
-        +'The closest would be '+c.d.n+(c.d.hood||c.d.area?' in '+(c.d.hood||c.d.area):'')
-        +(kmTo(c.d)?' ('+kmTo(c.d)+')':'')+', but they\'re shut at this hour too.';
+      /* name the place that holds out LONGEST — that is the useful fact */
+      const withClose=shut.map(x=>({...x, co:closesOn(x.d.n, when)})).filter(x=>x.co);
+      withClose.sort((a,b)=>b.co-a.co);
+      const c=withClose[0]||shut[0];
+      result.plan.reply='Straight with you — nothing in your bank here is open '+atTxt+'. '
+        +(c.co ? 'The latest is '+c.d.n+', till '+hhmm(c.co%1440)+'. '
+               : 'The closest would be '+c.d.n+(c.d.hood||c.d.area?' in '+(c.d.hood||c.d.area):'')+', shut then too. ')
+        +'Looking beyond it…';
       result.allShut=true;
+      /* the discovery pass, unprompted, told WHAT the constraint is */
+      if(!result.plan._chasedShut){
+        result.plan._chasedShut=true;
+        const known2=result.rows.slice(0,20).map(d=>d.n);
+        fetchSuggestions((result.plan.asked||'somewhere good')+
+          ' — must genuinely still be open '+(nowish?'right now':'after '+atTxt.replace('at ',''))+
+          ', a place that trades at that hour', known2, true);
+      }
     }
+  }
+  /* a night-time ask is also an EVENTS question — club nights ARE the late
+     answer. Cross the layers instead of leaving them in silos. */
+  const hr=when.getHours();
+  if((hr>=21 || hr<=5) && typeof EVENTS!=='undefined' && EVENTS.length){
+    result.nightEvents=eventsForNight(when, result.origin);
+    if(result.nightEvents.length && result.allShut)
+      result.plan.reply=result.plan.reply.replace(' Looking beyond it…',
+        ' But '+(result.nightEvents.length===1?'one night that IS on':result.nightEvents.length+' nights that ARE on')+
+        ' — below, with what Google knows. Looking beyond it…');
   }
   render();
 }
+/* the "night of" a moment: 18:00 that evening to 07:00 the morning after */
+function eventsForNight(when, origin){
+  const d=new Date(when); if(d.getHours()<7) d.setDate(d.getDate()-1);
+  const a=new Date(d); a.setHours(18,0,0,0);
+  const b=new Date(a); b.setDate(b.getDate()+1); b.setHours(7,0,0,0);
+  return (EVENTS||[]).filter(e=>{
+    const s=new Date(e.start); if(isNaN(s) || s<a || s>b) return false;
+    if(origin && e.lat) return dist(origin.pt,[e.lat,e.lng])<6;
+    return true;
+  }).slice(0,3);
+}
 
-function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); }
+function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); if(typeof drawGhosts==='function') drawGhosts(); }
 
 /* ---- Angus's list (Lamp), resolved server-side and merged at boot ----
    700 names with no city attached: the importer geocodes them against Google
    and keeps the London half here, so they arrive without rebuilding the app.
    Angus's own note leads the record — it is why the place is on the map. */
 let LAMP_PROGRESS=null, lampTimer=null;
+/* Google rarely names a neighbourhood for UK addresses, so Lamp places arrive
+   with hood=null and their cards read "London · Pub" where bank cards say
+   "Hoxton · Pub". The bank itself is the best dictionary: borrow the hood of
+   the nearest bank place, when one is close enough to genuinely share it. */
+function hoodFromBank(lat,lng){
+  let best=null;
+  for(const d of DATA){
+    if(!d.lat || !d.hood || d.hood==='London' || d.src==='lamp') continue;
+    const km=dist([lat,lng],[d.lat,d.lng]);
+    if(km<1.2 && (!best || km<best.km)) best={km, hood:d.hood};
+  }
+  return best ? best.hood : null;
+}
 async function loadLamp(){
   try{
     const r=await fetch('/api/lamp',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2893,7 +3003,13 @@ async function loadLamp(){
     const j=await r.json();
     if(!j || !Array.isArray(j.places)) return;
     let added=0;
-    j.places.forEach(p=>{ if(p && p.lat && !inBank(p.n)){ addToBoard(p); added++; } });
+    j.places.forEach(p=>{ if(p && p.lat && !inBank(p.n)){
+      if(!p.hood || p.hood==='London'){
+        const h=hoodFromBank(p.lat,p.lng);
+        if(h){ p.hood=h; if(!p.area || p.area==='London') p.area=h; }
+      }
+      addToBoard(p); added++;
+    } });
     LAMP_PROGRESS=j.progress||null;
     if(added){ refreshSrcChips(); if(!S.plan) render(); }
     updateBankCount();
@@ -3179,6 +3295,61 @@ function bankFarFrom(result){
    asked — it shows Google's view of what's around as dashed pins the moment
    the fix lands. One call per session, wiped the moment a real plan draws. */
 let ambientDone=false;
+/* ---- the informer map ----
+   Google Maps never shows you a blank street, and this map shouldn't either.
+   As you pan around at browse time, any view where the bank is thin quietly
+   gets Google's take drawn in as grey ghost pins — the map itself becomes the
+   scout. One nearby call per ~2km tile, ever (cached a week), only when the
+   view is actually sparse, so it costs pennies and only speaks where the bank
+   is silent. */
+let ghostLayer=null, ambTimer=null;
+const ghostSeen=new Map(), ambTiles=new Set();
+const ambKey=c=>(Math.round(c.lat/0.018)*0.018).toFixed(3)+','+(Math.round(c.lng/0.028)*0.028).toFixed(3);
+async function informerSweep(){
+  if(S.plan) return;                                  // browse time only
+  if(map.getZoom()<13) return;                        // too far out to mean an area
+  const c=map.getCenter();
+  if(!(c.lat>51.2&&c.lat<51.8&&c.lng>-0.6&&c.lng<0.4)) return;
+  const key=ambKey(c);
+  if(ambTiles.has(key)) return;
+  const bd=map.getBounds();
+  const inView=DATA.filter(d=>d.lat&&bd.contains([d.lat,d.lng])).length;
+  if(inView>=5) return;                               // the bank already speaks here
+  ambTiles.add(key);
+  const ck='amb:'+key;
+  let places; const hit=lsGet(ck);
+  if(hit && hit.ts && Date.now()-hit.ts<WEEK_MS) places=hit.places||[];
+  else{
+    try{
+      const r=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({nearby:{kind:'any', radius:1800}, lat:c.lat, lng:c.lng})});
+      const d=await r.json();
+      places=((d&&d.places)||[]);
+      lsSet(ck,{ts:Date.now(), places});
+    }catch(e){ ambTiles.delete(key); return; }        // offline now ≠ never
+  }
+  let fresh=0;
+  places.filter(p=>p&&p.lat&&!inBank(p.name)).forEach(p=>{
+    if(!ghostSeen.has(p.name)){ p.area=p.area||p.address; ghostSeen.set(p.name,p); fresh++; }
+  });
+  if(fresh) drawGhosts();
+}
+function drawGhosts(){
+  if(ghostLayer){ map.removeLayer(ghostLayer); ghostLayer=null; }
+  if(S.plan) return;                                  // plans own the map
+  const list=[...ghostSeen.values()];
+  if(!list.length) return;
+  ghostLayer=L.layerGroup(list.map(p=>{
+    const m=L.marker([p.lat,p.lng],{icon:L.divIcon({className:'lm',
+      html:'<div class="mk ghost">'+svg(p.kind||'eat')+'</div>',
+      iconSize:[22,22], iconAnchor:[11,22]}), title:p.name, zIndexOffset:-200});
+    m.on('click',()=>openSuggestion(p));
+    return m;
+  })).addTo(map);
+}
+function hideGhosts(){ if(ghostLayer){ map.removeLayer(ghostLayer); ghostLayer=null; } }
+map.on('moveend', ()=>{ clearTimeout(ambTimer); ambTimer=setTimeout(informerSweep, 900); });
+
 async function ambientNearby(){
   if(ambientDone || S.plan || !S.me) return;
   const covered=DATA.filter(d=>d.lat && dist(S.me,[d.lat,d.lng])<=2).length;
@@ -3501,7 +3672,7 @@ async function ask(text, fresh){
   }
 
   /* -------- a fresh ask -------- */
-  if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawNearbyMarkers([]); drawRoute(null); drawAlts(null); }
+  if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); }
   let local=parseLocal(text);
   /* Nothing recognisable — no kind, no area, no tag — but the words might
      still be written down somewhere in the bank: a dish from a write-up, a
@@ -3676,6 +3847,11 @@ function planBar(p){
   if(p.type==='anchor' && p.anchor && !p.route && !p.theirs && tasteBoost(p.anchor.d)>=5)
     via += ' · picked for your taste';
   const wide = p.widened ? ' · nothing very close, widened to '+Math.round(p.rad)+'km' : '';
+  /* the fair midpoint: say the minutes so it reads as a decision, not a guess */
+  const mid = (p.plan && p.plan._mid)
+    ? ' · fair by travel time: ~'+p.plan._mid.tA+' min for one of you, ~'+p.plan._mid.tB+' for the other'
+    : (p.plan && p.plan.between && p.plan._midTried && !p.plan._midFail
+        ? ' · finding the fair meeting point…' : '');
   const when = S.planWhen ? ' · for '+S.planWhen.toLocaleDateString('en-GB',{weekday:'short'})+' '+
       String(S.planWhen.getHours()).padStart(2,'0')+':'+String(S.planWhen.getMinutes()).padStart(2,'0') : '';
   const who = (p.plan && p.plan.party) ? ' · '+p.plan.party+' of you' : '';
@@ -3686,7 +3862,7 @@ function planBar(p){
   const matched = (p.plan && p.plan._matched && p.plan._matched.length)
     ? ' · matched on “'+esc(p.plan._matched.slice(0,3).join('”, “'))+'”' : '';
   el.innerHTML='<div class="pb">'+esc((p.plan&&p.plan.reply)||('Looking for: '+((p.plan&&p.plan.asked)||'')))+
-    '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+when+who+wide+matched+hrs+'</span></div>'+
+    '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+when+who+mid+wide+matched+hrs+'</span></div>'+
     '<button id="clearplan">clear</button>';
   setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
   return el;
@@ -3934,6 +4110,14 @@ function renderPlan(){
   p.rows.forEach(d=>frag.appendChild(card(d)));
   listEl.appendChild(frag);
   drawAlts(null);
+  /* club nights ARE late-night answers — surfaced inside the plan, not
+     hidden behind knowing to ask "what's on" */
+  if(p.nightEvents && p.nightEvents.length){
+    listEl.insertAdjacentHTML('beforeend',
+      '<div class="sechead">On that night</div>');
+    p.nightEvents.forEach(e=>listEl.appendChild(evCard(e, p.origin)));
+    drawEventMarkers(p.nightEvents);
+  }
   renderSuggestions();
   if(!again && typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
   if(again) listEl.scrollTop=keep;
@@ -4677,6 +4861,25 @@ function openState(name, when){
   const o=openAt(h.week, t);
   if(o===null) return null;
   return {open:o, closingAt: o ? closingSoon(h.week, t) : null};
+}
+/* when does this place actually shut on the night containing `when`?
+   Returns minutes-since-midnight (can exceed 1440 for a past-midnight close),
+   or null if unknown / closed that night. The honest late-night reply needs
+   this: "the latest is Bar Americano, till 02:00" beats "everything is shut". */
+function closesOn(name, when){
+  const h=knownHours(name);
+  if(!h || !h.week || h.weekOk===false) return null;
+  const t=when||new Date();
+  // the "night of": hours before 7am belong to the previous evening
+  const d0=new Date(t); if(d0.getHours()<7) d0.setDate(d0.getDate()-1);
+  const spans=h.week[d0.getDay()];
+  if(!spans || !spans.length) return null;
+  let best=null;
+  for(const [a,b] of spans){
+    const end = b>a ? b : b+1440;              // ran past midnight
+    if(best===null || end>best) best=end;
+  }
+  return best;
 }
 
 /* ---------------- detail ---------------- */
