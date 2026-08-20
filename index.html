@@ -912,6 +912,13 @@ body.detail-open .mobtab{display:none}
 .evdate span{display:block; font-size:10.5px; color:var(--ink-3); margin-top:1px}
 .card.ev .savebtn.evgo{text-decoration:none; display:inline-flex; align-items:center}
 /* the card's own next step: what's near this, from your bank */
+/* the understanding layer: read from reviews, always labelled as such */
+.under{margin:0 0 16px; padding:12px 13px; border-radius:12px;
+  background:var(--surface-2); border:1px solid var(--line)}
+.uvibe{margin:0 0 9px; font-size:13.5px; line-height:1.55; color:var(--ink)}
+.ufor{margin:0 0 6px; font-size:12.5px; color:var(--ink-2); line-height:1.5}
+.ufor b{color:var(--ink); font-weight:600}
+.usrc{margin:8px 0 0; font-size:11px; color:var(--ink-3); line-height:1.45}
 .afterby{margin:2px 0 14px}
 .afterby h4{margin:0 0 7px; font-size:11.5px; font-weight:650; text-transform:uppercase;
   letter-spacing:.05em; color:var(--ink-3)}
@@ -2019,7 +2026,26 @@ const TAGWORDS=[
   ['summer',/\b(rooftop|terrace|summer)\b/],
   ['special',/\b(anniversary|birthday|special occasion|celebrat)\b/],
 ];
-const CHEAP=/\b(cheap|cheaply|budget|tenner|affordable|inexpensive|under £?\d+)\b/;
+/* Angus searched "best small plates", "authentic food" and "cheap food" and got
+   the same answer three times: none of that vocabulary existed, so every query
+   collapsed to "somewhere to eat" and rating decided. Two fixes — this table
+   grows, AND leftover words are matched against what is actually written about
+   each place (see termsFrom/textOf below). */
+const TAGWORDS2=[
+  ['small-plates',/\b(small plates?|sharing plates?|tapas|snacks?|bar snacks?|nibbles)\b/],
+  ['authentic',/\b(authentic|proper|traditional|no ?frills|old ?school|real deal|legit|family ?run|hole in the wall)\b/],
+  ['natural-wine',/\b(natural wine|nat ?wine|orange wine|low intervention|wine bar)\b/],
+  ['brunch',/\b(brunch|breakfast|eggs)\b/],
+  ['quiet',/\b(quiet|calm|chilled|low ?key|relaxed|peaceful)\b/],
+  ['buzzy',/\b(buzzy|lively|busy|energy|bustling)\b/],
+  ['groups',/\b(big group|large group|group of|lots of us|loads of us|crowd)\b/],
+  ['solo',/\b(on my own|by myself|solo|alone|just me)\b/],
+  ['bookable',/\b(book|booking|reserve|reservation|table for)\b/],
+  ['walkin',/\b(walk ?in|no booking|without booking|turn up)\b/],
+  ['view',/\b(view|skyline|overlooking|looking out)\b/],
+  ['work',/\b(work|laptop|wifi|emails)\b/],
+];
+const CHEAP=/\b(cheap|cheaply|budget|tenner|affordable|inexpensive|under £?\d+|good value|value)\b/;
 const FANCY=/\b(fancy|nice|posh|splash|treat|special|blow out|blowout)\b/;
 const BETWEEN=/\b(in the middle|halfway|half way|between|meet in the middle|midway)\b/;
 const NEARME=/\b(near me|close by|nearby|around here|round here|near by)\b/;
@@ -2091,6 +2117,50 @@ function partyFrom(t){
   return (n>=2 && n<=40) ? n : null;
 }
 
+/* everything actually written about a place: the writer's words, what to order,
+   what it was filed under, and — once the engine has read it — the vibe and
+   good-for lines. This is the corpus a free-text ask searches. */
+function textOf(d){
+  if(d._txt) return d._txt;
+  const bits=[d.n, d.t, d.cui, d.hood, d.area, (d.tags||[]).join(' '),
+    (d.orders||[]).join(' '), (d.vibes||[]).join(' '),
+    (d.m||[]).map(m=>m.b||'').join(' ')];
+  const e=(typeof enrGet==='function')?enrGet(d.n):null;
+  if(e) bits.push(e.vibe, e.description, (e.bestFor||[]).join(' '),
+    (e.order||[]).join(' '), (e.tags||[]).join(' '));
+  d._txt=bits.filter(Boolean).join(' ').toLowerCase();
+  return d._txt;
+}
+const STOPW=new Set(('a an the and or of in on at to for with from is are be i we me my our you your it its'+
+  ' best good great nice place places somewhere something anywhere anything spot spots near around'+
+  ' show find get give want need looking look go going lets let please can could would like'+
+  ' food eat eating drink drinks bar bars restaurant restaurants cafe cafes pub pubs'+
+  ' london tonight today tomorrow now then there here what where which how any some more most'+
+  ' really very quite bit really just also too very s t').split(/\s+/));
+/* The content words a query leaves behind once EVERYTHING the app already
+   understood is stripped out. This matters: "anywhere still open for drinks"
+   has no content words at all — "open" and "still" are timing, already read by
+   OPENNOW — and treating them as search terms sent it hunting for blurbs
+   containing the word "open". Terms are the residue, never the whole sentence. */
+function termsFrom(t, extra){
+  let s=' '+String(t).toLowerCase()+' ';
+  const kill=[OPENNOW, NEARME, EVENTWORDS, BETWEEN, CHEAP, FANCY, PLANWORDS]
+    .concat(KINDWORDS.map(x=>x[1]), TAGWORDS.map(x=>x[1]), TAGWORDS2.map(x=>x[1]));
+  kill.forEach(re=>{ try{ s=s.replace(new RegExp(re.source,'gi'),' '); }catch(e){} });
+  (extra||[]).forEach(w=>{ if(w) s=s.split(String(w).toLowerCase()).join(' '); });
+  return [...new Set(s.replace(/[^a-z0-9\s]/g,' ').split(/\s+/)
+    .filter(w=>w.length>2 && !STOPW.has(w)))].slice(0,6);
+}
+function termScore(d, terms){
+  if(!terms || !terms.length) return 0;
+  const txt=textOf(d);
+  let hit=0;
+  terms.forEach(w=>{
+    const stem=w.replace(/(ies|es|s)$/,'');
+    if(txt.includes(w) || (stem.length>3 && txt.includes(stem))) hit++;
+  });
+  return hit;
+}
 function parseLocal(text){
   const t=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
   /* a curated day answers exactly as the writer wrote it; nothing to assemble
@@ -2117,16 +2187,18 @@ function parseLocal(text){
     const cuisines=findCuisines(seg);
     if(!kind && cuisines.length) kind='eat';
     const tags=TAGWORDS.filter(([,re])=>re.test(seg)).map(([k])=>k);
+    const hints=TAGWORDS2.filter(([,re])=>re.test(seg)).map(([k])=>k);
     const maxBand = CHEAP.test(seg) ? '£' : FANCY.test(seg) ? '£££' : null;
-    if(kind||tags.length||maxBand||cuisines.length)
-      stops.push({kind:kind||'any', cuisines, tags, maxBand, label:null});
+    if(kind||tags.length||hints.length||maxBand||cuisines.length)
+      stops.push({kind:kind||'any', cuisines, tags, hints, maxBand, label:null});
   });
   if(!stops.length){
     let kind=(KINDWORDS.find(([,re])=>re.test(t))||[])[0];
     const cuisines=findCuisines(t);
     if(!kind && cuisines.length) kind='eat';
     const tags=TAGWORDS.filter(([,re])=>re.test(t)).map(([k])=>k);
-    if(kind||tags.length||cuisines.length) stops.push({kind:kind||'any', cuisines, tags,
+    const hints=TAGWORDS2.filter(([,re])=>re.test(t)).map(([k])=>k);
+    if(kind||tags.length||hints.length||cuisines.length) stops.push({kind:kind||'any', cuisines, tags, hints,
       maxBand: CHEAP.test(t)?'£':FANCY.test(t)?'£££':null});
   }
   const openAsk=OPENNOW.test(t);
@@ -2154,8 +2226,15 @@ function parseLocal(text){
   };
   /* is this an occasion being planned, or one thing needed right now? */
   plan.wantsAfter = !openAsk && (stops.length>=2 || PLANWORDS.test(t));
+  /* the words the query leaves behind — searched against what is written about
+     each place, so "small plates" and "authentic" stop being invisible */
+  /* strip the areas and cuisines already understood, so only genuinely
+     unread words remain to search on */
+  plan.terms=termsFrom(t, places.map(x=>x.name).concat(venues,
+    stops.flatMap(x=>x.cuisines||[])));
   const confident = openAsk
-    || stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)) || places.length>0 || venues.length>0;
+    || stops.some(x=>x.kind!=='any'||(x.cuisines&&x.cuisines.length)||(x.hints&&x.hints.length))
+    || places.length>0 || venues.length>0;
   /* strong enough that asking the model would only confirm what we already read.
      Every model call costs a serverless invocation, so we skip the ones we
      do not need rather than asking twice for the same answer. An "open now"
@@ -2644,7 +2723,26 @@ function runPlan(plan){
     result.widened=widened; result.rad=rad;
     if(result.anchor && !plan.reply){ plan.reply=describePlan(result); plan._autoReply=true; }
   } else {
-    result={type:'rows', rows:rank(stopMatches(stops[0]).filter(inRegion)).slice(0,40).map(x=>x.d),
+    let pool=stopMatches(stops[0]).filter(inRegion);
+    /* what the query actually said, matched against what is written about each
+       place. Terms narrow the POOL; they never reorder distance (t36 is sacred).
+       If nothing matches the words, fall back to the whole pool rather than
+       answering with nothing. */
+    const hints=(stops[0].hints||[]);
+    const terms=[...new Set((plan.terms||[]).concat(hints.map(h=>h.replace(/-/g,' '))))];
+    if(terms.length){
+      const scored=pool.map(d=>({d, s:termScore(d, terms)})).filter(x=>x.s>0);
+      /* Two genuine matches beat forty vague ones — precision first, and the
+         thin-bank rule then goes to Google for volume. This threshold was 3
+         and silently switched the whole feature off for narrow asks. */
+      if(scored.length>=1){
+        const top=Math.max(...scored.map(x=>x.s));
+        /* keep the strongest matches; one hit out of four words is noise */
+        pool=scored.filter(x=>x.s>=Math.max(1, top-1)).map(x=>x.d);
+        plan._matched=terms;
+      }
+    }
+    result={type:'rows', rows:rank(pool).slice(0,40).map(x=>x.d),
             origin, plan, widened, rad};
     if(plan.openNow && !plan.reply && origin)
       plan.reply='What’s around you right now, nearest first — checking live opening hours.';
@@ -2726,6 +2824,74 @@ async function applyHours(result){
 }
 
 function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); }
+
+/* ---- the understanding layer: what each place is ACTUALLY like ----
+   A background job reads reviews and editorial for every place in the bank and
+   distils vibe / best-for / an honest description. The app reads that here. It
+   is cached in localStorage so a card never waits on the network twice, and it
+   is always labelled as read-from-reviews, never presented as a friend's word. */
+const ENRKEY='otp:v1:enr:';
+const enrCache=new Map();
+function enrGet(name){
+  if(enrCache.has(name)) return enrCache.get(name);
+  try{
+    const raw=localStorage.getItem(ENRKEY+slugOf(name));
+    if(raw){ const j=JSON.parse(raw);
+      if(j && Date.now()-(j._got||0) < 30*86400e3){ enrCache.set(name,j); return j; } }
+  }catch(e){}
+  return null;
+}
+async function enrFetch(names){
+  const want=names.filter(n=>!enrGet(n)).slice(0,40);
+  if(!want.length) return;
+  try{
+    const r=await fetch('/api/enrich',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'get', names:want})});
+    const d=await r.json();
+    const recs=(d&&d.records)||{};
+    want.forEach(n=>{
+      const rec=recs[slugOf(n)];
+      if(!rec || rec.failed) return;
+      rec._got=Date.now();
+      enrCache.set(n,rec);
+      try{ localStorage.setItem(ENRKEY+slugOf(n), JSON.stringify(rec)); }catch(e){}
+    });
+  }catch(e){ /* the layer is a bonus, never a blocker */ }
+}
+/* tell the engine what the bank holds, once per version, so it can work
+   through everything in the background without the app asking place by place */
+async function postRoster(){
+  const stamp='roster:'+DATA.length;   // DATA.length, not the baked 501 token
+  if(localStorage.getItem('otp:v1:'+stamp)) return;
+  try{
+    const places=DATA.filter(d=>d.lat).map(d=>({n:d.n, gid:d.gid||null,
+      addr:d.addr||null, hood:d.hood||d.area||null,
+      m:(d.m||[]).slice(0,2).map(m=>({b:m.b||''}))}));
+    const r=await fetch('/api/enrich',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'roster', places})});
+    if(r.ok) localStorage.setItem('otp:v1:'+stamp,'1');
+  }catch(e){}
+}
+function enrHtml(d){
+  const e=enrGet(d.n);
+  if(!e) return '';
+  const own=(d.m||[]).some(m=>m.b);
+  let h='<div class="under">';
+  /* where the place has nobody's words, this IS the description — say where
+     it came from so it is never mistaken for a friend's recommendation */
+  if(e.vibe) h+='<p class="uvibe">'+esc(e.vibe)+'</p>';
+  else if(e.description) h+='<p class="uvibe">'+esc(e.description)+'</p>';
+  if((e.bestFor||[]).length)
+    h+='<p class="ufor"><b>Good for</b> '+esc(e.bestFor.join(' · '))+'</p>';
+  if((e.order||[]).length)
+    h+='<p class="ufor"><b>People order</b> '+esc(e.order.join(' · '))+'</p>';
+  if(e.avoidIf) h+='<p class="ufor"><b>Not if</b> '+esc(e.avoidIf)+'</p>';
+  h+='<p class="usrc">Read from '+(e.src&&e.src.reviews?e.src.reviews+' reviews':'what is written online')+
+     (e.src&&e.src.count?' of '+e.src.count:'')+
+     (e.confidence==='low'?' — thin evidence, treat it lightly':'')+
+     (own?'. The words above in quotes are still the writer’s own.':'')+'</p>';
+  return h+'</div>';
+}
 
 /* ---- the outside layer: the events feed, scouted weekly ---- */
 let EVENTS=[], EVENTS_META=null;
@@ -2993,7 +3159,10 @@ function openSuggestion(p){
   dname.textContent=p.name;
   let h='<div class="dmeta"><span class="tag">not in your bank</span>'+
     '<span class="tag">'+esc(CATS[p.kind]?CATS[p.kind].label:'Place')+'</span>'+
-    (p.area?'<span class="tag">'+esc(p.area)+'</span>':'')+'</div>';
+    (p.area?'<span class="tag">'+esc(p.area)+'</span>':'')+'</div>'+
+    /* the hours were always fetched for these — they just had no slot to
+       land in. Unbanked places deserve the same honesty as banked ones. */
+    (p.lat?'<div id="liveslot"><p class="livewait">Checking hours…</p></div>':'');
   const cite = p.via==='google' ? 'found on Google'+(p.type?' · listed as '+esc(String(p.type).replace(/_/g,' ')):'')
     : 'suggested by the model · '+(p.via==='register'?'address confirmed in the UK food hygiene register'
       :p.via==='map'?'found in OpenStreetMap':'the street address exists, the name is the model\'s word');
@@ -3356,8 +3525,12 @@ function planBar(p){
   const who = (p.plan && p.plan.party) ? ' · '+p.plan.party+' of you' : '';
   const hrs = p.hoursPending ? ' · checking hours…'
     : (p.shutCount ? ' · '+p.shutCount+' shut then, moved down' : '');
+  /* say WHICH words did the choosing — a search that silently ignores half
+     your sentence is what made three different asks give one answer */
+  const matched = (p.plan && p.plan._matched && p.plan._matched.length)
+    ? ' · matched on “'+esc(p.plan._matched.slice(0,3).join('”, “'))+'”' : '';
   el.innerHTML='<div class="pb">'+esc((p.plan&&p.plan.reply)||('Looking for: '+((p.plan&&p.plan.asked)||'')))+
-    '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+when+who+wide+hrs+'</span></div>'+
+    '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+when+who+wide+matched+hrs+'</span></div>'+
     '<button id="clearplan">clear</button>';
   setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
   return el;
@@ -4379,9 +4552,15 @@ function openDetail(d,fly){
   else if(d.conf==='low') notes.push('Approximate pin: the right street or area, but not confirmed to the door.');
   if(d.aka&&d.aka.length) notes.push('Also written as: '+d.aka.join(', ')+'.');
   if(notes.length) h+='<p class="note">'+notes.map(esc).join('<br>')+'</p>';
+  h+='<div id="underslot">'+enrHtml(d)+'</div>';
   h+=afterHtml(d);
   dbody.innerHTML=h;
   dbody.scrollTop=0;
+  /* not read yet? fetch it and paint it in when it lands */
+  if(!enrGet(d.n)) enrFetch([d.n]).then(()=>{
+    const slot=document.getElementById('underslot');
+    if(slot && dname.textContent===d.n) slot.innerHTML=enrHtml(d);
+  });
   dbody.querySelectorAll('.aftbtn').forEach(b=>b.onclick=()=>{
     const d2=DATA[+b.dataset.i];
     if(!d2) return;
@@ -4738,6 +4917,7 @@ homeView();
 locate(true);
 loadSaved();          // whatever you saved on any device
 loadEvents();         // what's on — scouted weekly into the feed
+postRoster();         // tell the understanding engine what the bank holds
 </script>
 </body>
 </html>
