@@ -1428,6 +1428,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
       <div class="menu">
         <div class="mhead"><b>Oh the places you will go</b>
           <span class="msub"><span id="mcount"></span> London spots · <a href="https://sowhatsthesitch.substack.com" target="_blank" rel="noopener">so what's the sitch</a> + Olaloye's list</span></div>
+        <p class="msub" id="lampprog" hidden></p>
         <button class="mbrowse" id="browseall" type="button">Browse all places A–Z</button>
         <div id="mslot1"></div>
         <div id="mslot2"></div>
@@ -2874,6 +2875,7 @@ function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarker
    700 names with no city attached: the importer geocodes them against Google
    and keeps the London half here, so they arrive without rebuilding the app.
    Angus's own note leads the record — it is why the place is on the map. */
+let LAMP_PROGRESS=null, lampTimer=null;
 async function loadLamp(){
   try{
     const r=await fetch('/api/lamp',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -2882,9 +2884,16 @@ async function loadLamp(){
     if(!j || !Array.isArray(j.places)) return;
     let added=0;
     j.places.forEach(p=>{ if(p && p.lat && !inBank(p.n)){ addToBoard(p); added++; } });
-    if(added){ refreshSrcChips(); updateBankCount(); if(!S.plan) render(); }
-    if(j.progress && j.progress.done < j.progress.total)
-      console.info('[lamp] '+j.progress.done+' of '+j.progress.total+' resolved so far');
+    LAMP_PROGRESS=j.progress||null;
+    if(added){ refreshSrcChips(); if(!S.plan) render(); }
+    updateBankCount();
+    if(added) toast(added+' more from Angus’s list — '+DATA.length+' places now');
+    /* the import takes hours: keep checking every couple of minutes while it
+       runs, so the number climbs on its own instead of looking stuck */
+    if(LAMP_PROGRESS && LAMP_PROGRESS.done < LAMP_PROGRESS.total){
+      clearTimeout(lampTimer);
+      lampTimer=setTimeout(loadLamp, 120000);
+    }
   }catch(e){ /* the bank still works without it */ }
 }
 
@@ -4169,9 +4178,36 @@ function askPass(){
   });
 }
 /* the header count follows the bank as it grows and shrinks */
+/* The credit line used to be hardcoded to two sources, so Angus's 700 places
+   were invisible in the headline even though they were on the map. Now it is
+   built from what the bank actually holds — add a source, it names itself. */
+function creditLine(){
+  const has=k=>DATA.some(d=>d.src===k);
+  const bits=[];
+  if(has('sitch')) bits.push('<a href="https://sowhatsthesitch.substack.com" target="_blank" rel="noopener">so what\'s the sitch</a>');
+  if(has('olaloye')) bits.push('Olaloye\'s list');
+  if(has('lamp')) bits.push('Angus\'s list');
+  if(has('insta')) bits.push('Instagram');
+  if(has('mine')) bits.push('your saves');
+  return DATA.length+' London spots · '+
+    (bits.length>1 ? bits.slice(0,-1).join(', ')+' + '+bits[bits.length-1] : (bits[0]||''));
+}
 function updateBankCount(){
   const el=document.getElementById('bankcount');
   if(el) el.textContent=DATA.length;
+  /* the whole subtitle, both places it appears */
+  const c=creditLine();
+  const sub=document.querySelector('.hd .sub'); if(sub) sub.innerHTML=c;
+  const msub=document.querySelector('.menu .msub'); if(msub) msub.innerHTML=c;
+  /* while Angus's list is still resolving, say so rather than letting a
+     static number look broken */
+  const prog=document.getElementById('lampprog');
+  if(prog && LAMP_PROGRESS && LAMP_PROGRESS.done < LAMP_PROGRESS.total){
+    prog.hidden=false;
+    prog.textContent='Angus’s list: '+DATA.filter(d=>d.src==='lamp').length+
+      ' in so far · '+LAMP_PROGRESS.done+' of '+LAMP_PROGRESS.total+
+      ' checked against Google · still going';
+  } else if(prog) prog.hidden=true;
 }
 function addToBoard(d){
   DATA.push(d);
