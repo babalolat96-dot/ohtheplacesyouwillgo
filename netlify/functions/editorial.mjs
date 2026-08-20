@@ -31,6 +31,24 @@ const envKey = names => {
   for (const n of names) { const v = process.env[n]; if (v && v.trim()) return v.trim(); }
   return null;
 };
+/* An Anthropic key must LOOK like one. "API_KEY" is a dangerously generic name
+   to trust blindly: taking whatever sits there and posting it to Anthropic is
+   how every model call came back 401 while the rest of the site worked fine
+   (suggest.js pattern-scans, these did not). Named vars first, but only if the
+   value is plausible; then scan the whole environment for an sk-ant- key. */
+const looksAnthropic = v => /^sk-ant-/.test(String(v || '').trim());
+const modelKey = () => {
+  for (const n of MODEL_KEYS) {
+    const v = process.env[n];
+    if (v && looksAnthropic(v)) return v.trim();
+  }
+  const found = Object.values(process.env).map(v => String(v || '').trim()).find(looksAnthropic);
+  if (found) return found;
+  // last resort: an unrecognised format under an explicit name, so a
+  // self-hosted proxy key still works — but named vars only, never a scan
+  for (const n of MODEL_KEYS) { const v = process.env[n]; if (v && v.trim()) return v.trim(); }
+  return null;
+};
 const googleKey = () => envKey(G_KEYS) ||
   Object.values(process.env).map(v => String(v||'').trim())
     .find(v => /^AIza[0-9A-Za-z_-]{20,}$/.test(v)) || null;
@@ -219,7 +237,7 @@ export default async (req) => {
       hasSearchKey: !!(envKey(['BRAVE_SEARCH_KEY','BRAVE_API_KEY','BRAVE_KEY']) ||
         (envKey(['GOOGLE_CSE_KEY','CSE_KEY']) && envKey(['GOOGLE_CSE_CX','CSE_CX']))) });
 
-  const gkey = googleKey(), mkey = envKey(MODEL_KEYS);
+  const gkey = googleKey(), mkey = modelKey();
   if (!gkey || !mkey) return J({ ok: false, error: !gkey ? 'no_google_key' : 'no_model_key' });
   if (!universe.length) return J({ ok: true, note: 'no roster yet' });
 
@@ -240,9 +258,16 @@ export default async (req) => {
       // 1. its own words: Google knows the website, we read it
       let site = null;
       if (p.gid) {
-        const d = await grab(`https://places.googleapis.com/v1/places/${p.gid}?languageCode=en-GB`, 2000, true)
-          .catch(() => null);
-        site = d && d.websiteUri;
+        /* grab() sends no auth header, so this call used to fail every time and
+           silently fall through to a second lookup. Places needs the key. */
+        const ac = new AbortController();
+        const to = setTimeout(() => ac.abort(), 2000);
+        try {
+          const r = await fetch(`https://places.googleapis.com/v1/places/${p.gid}?languageCode=en-GB`,
+            { signal: ac.signal, headers: { 'X-Goog-Api-Key': gkey,
+              'X-Goog-FieldMask': 'websiteUri' } });
+          if (r.ok) site = (await r.json()).websiteUri || null;
+        } catch (e) {} finally { clearTimeout(to); }
       }
       if (!site) {
         const s = await post('https://places.googleapis.com/v1/places:searchText',
@@ -257,7 +282,9 @@ export default async (req) => {
         if (html) {
           own.text = textOf(html, 4500);
           const subs = subPages(html, site);
-          if (subs.length && left() > 4500) {
+          /* many venue sites are JS shells with no readable text on the
+             homepage; the about/menu page is often plain HTML */
+          if (subs.length && (left() > 4500 || own.text.length < 200)) {
             const extra = await grab(subs[0], 2000);
             if (extra) own.text += '\n\n[' + subs[0] + ']\n' + textOf(extra, 3000);
           }

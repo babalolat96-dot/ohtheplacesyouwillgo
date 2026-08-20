@@ -34,6 +34,24 @@ const envKey = names => {
   for (const n of names) { const v = process.env[n]; if (v && v.trim()) return v.trim(); }
   return null;
 };
+/* An Anthropic key must LOOK like one. "API_KEY" is a dangerously generic name
+   to trust blindly: taking whatever sits there and posting it to Anthropic is
+   how every model call came back 401 while the rest of the site worked fine
+   (suggest.js pattern-scans, these did not). Named vars first, but only if the
+   value is plausible; then scan the whole environment for an sk-ant- key. */
+const looksAnthropic = v => /^sk-ant-/.test(String(v || '').trim());
+const modelKey = () => {
+  for (const n of MODEL_KEYS) {
+    const v = process.env[n];
+    if (v && looksAnthropic(v)) return v.trim();
+  }
+  const found = Object.values(process.env).map(v => String(v || '').trim()).find(looksAnthropic);
+  if (found) return found;
+  // last resort: an unrecognised format under an explicit name, so a
+  // self-hosted proxy key still works — but named vars only, never a scan
+  for (const n of MODEL_KEYS) { const v = process.env[n]; if (v && v.trim()) return v.trim(); }
+  return null;
+};
 const googleKey = () => envKey(G_KEYS) ||
   Object.values(process.env).map(v => String(v||'').trim())
     .find(v => /^AIza[0-9A-Za-z_-]{20,}$/.test(v)) || null;
@@ -172,7 +190,7 @@ export default async (req) => {
   let body = {};
   if (req && req.method === 'POST') { try { body = await req.json(); } catch (e) {} }
 
-  const gkey = googleKey(), mkey = envKey(MODEL_KEYS);
+  const gkey = googleKey(), mkey = modelKey();
   if (!gkey || !mkey) return J({ ok: false, error: !gkey ? 'no_google_key' : 'no_model_key' });
 
   const read = async (k, d) => { try { const v = await store.get(k, { type: 'json' }); return v ?? d; } catch (e) { return d; } };

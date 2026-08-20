@@ -25,6 +25,16 @@ const envKey = names => {
   for (const n of names) { const v = process.env[n]; if (v && v.trim()) return v.trim(); }
   return null;
 };
+/* same trap as enrich/editorial: "API_KEY" may hold something that is not an
+   Anthropic key, and posting it returns 401 while the rest of the site works */
+const looksAnthropic = v => /^sk-ant-/.test(String(v || '').trim());
+const modelKey = () => {
+  for (const n of MODEL_KEYS) { const v = process.env[n]; if (v && looksAnthropic(v)) return v.trim(); }
+  const found = Object.values(process.env).map(v => String(v || '').trim()).find(looksAnthropic);
+  if (found) return found;
+  for (const n of MODEL_KEYS) { const v = process.env[n]; if (v && v.trim()) return v.trim(); }
+  return null;
+};
 const googleKey = () => envKey(G_KEYS) ||
   Object.values(process.env).map(v => String(v || '').trim())
     .find(v => /^AIza[0-9A-Za-z_-]{20,}$/.test(v)) || null;
@@ -80,7 +90,7 @@ const SCHEMA = {
 };
 
 async function extract(text, today) {
-  const key = envKey(MODEL_KEYS);
+  const key = modelKey();
   if (!key) return { error: 'no_model_key', events: [] };
   let model = process.env.OTP_MODEL || null;
   if (!model) {
