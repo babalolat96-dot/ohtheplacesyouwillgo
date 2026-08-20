@@ -925,6 +925,12 @@ body.detail-open .mobtab{display:none}
 .egap{margin:0 0 9px; font-size:13px; line-height:1.55; color:var(--ink)}
 .egap b{display:block; font-size:11px; font-weight:650; text-transform:uppercase;
   letter-spacing:.05em; color:var(--accent); margin-bottom:3px}
+/* the filter commit button: sticky at the foot of the filter panel so it is
+   reachable however long the chip list gets */
+.fapply{position:sticky; bottom:0; display:block; width:100%; margin:14px 0 0;
+  padding:13px 14px; border:0; border-radius:12px; background:var(--accent);
+  color:#fff; font-size:14.5px; font-weight:600; cursor:pointer}
+.fapply:disabled{background:var(--surface-2); color:var(--ink-3); cursor:default}
 .afterby{margin:2px 0 14px}
 .afterby h4{margin:0 0 7px; font-size:11.5px; font-weight:650; text-transform:uppercase;
   letter-spacing:.05em; color:var(--ink-3)}
@@ -1403,6 +1409,10 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
         <p class="flabel">Whose pick</p>
         <div class="chips" id="srcchips"></div>
       </div>
+      <!-- the commit: filters were live but invisible behind the menu, so they
+           read as dud buttons. This closes the menu, fits the map to what is
+           left, and opens the list. -->
+      <button class="fapply" id="fapply" type="button">Show all 501</button>
     </div>
 
     <div class="bar">
@@ -4189,16 +4199,18 @@ function creditLine(){
   if(has('lamp')) bits.push('Angus\'s list');
   if(has('insta')) bits.push('Instagram');
   if(has('mine')) bits.push('your saves');
-  return DATA.length+' London spots · '+
+  /* the count SPAN must survive the rebuild — it lives inside this line, and
+     replacing the line without it left #bankcount null and froze the number */
+  return '<span id="bankcount">'+DATA.length+'</span> London spots · '+
     (bits.length>1 ? bits.slice(0,-1).join(', ')+' + '+bits[bits.length-1] : (bits[0]||''));
 }
 function updateBankCount(){
-  const el=document.getElementById('bankcount');
-  if(el) el.textContent=DATA.length;
-  /* the whole subtitle, both places it appears */
   const c=creditLine();
-  const sub=document.querySelector('.hd .sub'); if(sub) sub.innerHTML=c;
-  const msub=document.querySelector('.menu .msub'); if(msub) msub.innerHTML=c;
+  const sub=document.querySelector('.hd .sub');
+  if(sub) sub.innerHTML=c;
+  else { const el=document.getElementById('bankcount'); if(el) el.textContent=DATA.length; }
+  const msub=document.querySelector('.menu .msub');
+  if(msub) msub.innerHTML=c.replace('id="bankcount"','id="mcount"');
   /* while Angus's list is still resolving, say so rather than letting a
      static number look broken */
   const prog=document.getElementById('lampprog');
@@ -4928,6 +4940,32 @@ fbtn.onclick=()=>{
 function updateFilterCount(){
   const n=S.vibes.size+S.cats.size+S.regs.size+S.bands.size+S.cuis.size+S.srcs.size;
   fcount.hidden=!n; fcount.textContent=n;
+  /* the button always says what pressing it will actually show */
+  const ap=document.getElementById('fapply');
+  if(ap){
+    const hits=DATA.filter(match).length;
+    ap.disabled=!hits;
+    ap.textContent = !hits ? 'Nothing matches that combination'
+      : n ? 'Show '+hits+' place'+(hits===1?'':'s')
+          : 'Show all '+hits;
+  }
+}
+/* apply = get out of the way and show the result: close the menu, drop the
+   pins on the map, fit the map to them, open the list at half height */
+function applyFilters(){
+  const mw=document.getElementById('menuwrap');
+  if(mw) mw.hidden=true;
+  document.body.classList.remove('filters-open');
+  S.browse=true; clearPlan();
+  const rows=DATA.filter(match).filter(d=>d.lat);
+  if(rows.length){
+    const pts=rows.map(d=>[d.lat,d.lng]);
+    if(S.me) pts.push(S.me);
+    try{ map.flyToBounds(L.latLngBounds(pts),{padding:[45,45],maxZoom:15,duration:.7}); }catch(e){}
+  }
+  if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
+  toast(rows.length ? rows.length+' place'+(rows.length===1?'':'s')+' on the map'
+                    : 'Nothing matches that combination');
 }
 
 /* layout: phone = full-screen map with a draggable results sheet.
@@ -5070,6 +5108,8 @@ layout();
     mw.hidden=false;
   };
   mw.onclick=e=>{ if(e.target===mw) mw.hidden=true; };
+  const ap=document.getElementById('fapply');
+  if(ap) ap.onclick=applyFilters;
   const ba=document.getElementById('browseall');
   if(ba) ba.onclick=()=>{ mw.hidden=true; S.browse=true; clearPlan();
     if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1); };
