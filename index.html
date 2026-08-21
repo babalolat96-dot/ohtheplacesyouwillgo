@@ -1221,9 +1221,11 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .leaflet-bottom.leaflet-right{bottom:calc(84px + env(safe-area-inset-bottom))}
   .leaflet-bottom.leaflet-right .locbtn{margin:0 12px 12px 0}
   body.detail-open .locbtn{display:none}
+  /* thumbs live at the bottom: the menu sits bottom-left, level with the
+     locate button bottom-right — the two map controls mirror each other */
   .menufab{
-    display:grid; position:fixed; top:calc(10px + env(safe-area-inset-top)); left:10px;
-    z-index:35; width:40px; height:40px; border-radius:50%; border:1px solid var(--line);
+    display:grid; position:fixed; bottom:calc(96px + env(safe-area-inset-bottom)); left:12px;
+    z-index:35; width:42px; height:42px; border-radius:50%; border:1px solid var(--line);
     background:var(--surface); place-items:center; color:var(--ink-2);
     box-shadow:0 2px 10px rgba(0,0,0,.2); cursor:pointer;
   }
@@ -1447,6 +1449,22 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   flex:0 0 min(320px, 82%); scroll-snap-align:start; margin:0;
   border:1px solid var(--line) !important; border-radius:14px;
   background:var(--surface-2); align-self:stretch}
+/* the hand leads with the PHOTO: picture first, edge to edge, words after —
+   a card without a photo simply starts at the words, no empty frame */
+.optrow .card{flex-wrap:wrap; gap:0 11px; padding:0 0 12px; overflow:hidden}
+.optrow .card .cthumb{order:-1; width:100%; flex:0 0 100%; height:150px;
+  border-radius:13px 13px 0 0; margin:0; align-self:auto}
+.optrow .card>.pin{margin:13px 0 0 14px}
+.optrow .card>.evdate{margin:13px 0 0 14px}
+.optrow .card>div:not(.pin):not(.evdate){margin:12px 14px 0 0; flex:1 1 0; min-width:0}
+.optrow .card .savebtn{margin:12px 14px 0 auto}
+.optrow .card .addplan{margin:12px 14px 0 auto; align-self:flex-start}
+.optrow .card .savebtn+.addplan{margin-left:8px}
+/* the plan's first-layer hand gets the same photo-first face */
+.optrow.anchorrow .acard{overflow:hidden; padding-top:0}
+.optrow.anchorrow .acard>.cthumb{width:calc(100% + 26px); height:130px;
+  margin:0 -13px 0; border-radius:13px 13px 0 0; align-self:auto; flex:none}
+.optrow.anchorrow .acard>.rbody:first-child{margin-top:12px}
 /* onward options as cards: each "then go on to" is its own swipeable card */
 .optrow.onwardrow .after{flex:0 0 min(280px, 74%); scroll-snap-align:start;
   border:1px solid var(--line); border-radius:14px; background:var(--surface-2);
@@ -4663,11 +4681,28 @@ async function ask(text, fresh){
   const sportHit=(/\b(watch|screen\w*|show(?:ing|s)?)\b/i.test(text) && (SPORTWORDS.test(text)||TEAMWORDS.test(text)))
     || /\bsports?\s+(bar|pub)\b/i.test(text)
     || (/\b(pub|bar)\b/i.test(text) && /\bscreens?\b/i.test(text));
+  /* "in west", "near dalston" — the ask carries its own where. Compass words
+     get London's compass; anything else asks the gazetteer. */
+  const askedNear=(t)=>{
+    const m=t.match(/\b(?:in|near|around)\s+(?:the\s+)?([a-z][a-z' ]{2,28}?)\s*(?:tonight|today|tomorrow|now|please|[?.!,]|$)/i);
+    if(!m) return null;
+    const nm=m[1].trim();
+    if(/^(west|east|north|south|central)(\s+london)?$/i.test(nm)){
+      const c={west:[51.507,-0.245], east:[51.53,-0.05], north:[51.565,-0.11],
+               south:[51.46,-0.09], central:[51.514,-0.122]}[nm.toLowerCase().split(/\s+/)[0]];
+      return {pt:c, label:/london/i.test(nm)?nm:nm+' London'};
+    }
+    if(/^(me|here|there|us|home|town)$/i.test(nm)) return null;
+    const g=gazSearch(nm)[0];
+    return g?{pt:[g.lat,g.lng], label:g.name}:null;
+  };
   if(sportHit){
-    const near=S.me||(map?[map.getCenter().lat,map.getCenter().lng]:null);
+    const loc=askedNear(text);
+    const near=(loc&&loc.pt)||S.me||(map?[map.getCenter().lat,map.getCenter().lng]:null);
     if(!near){ pushBotSay('Tap the locate button (or name an area) and I’ll find the pubs with screens around it.'); return; }
+    const whereSaid=loc?loc.label:(S.me?'you':'the map');
     const team=(text.match(TEAMWORDS)||[])[0];
-    pushBotSay('Hunting for screens'+(team?' for the '+team+' game':'')+' — pubs and sports bars near '+(S.me?'you':'the map')+'…');
+    pushBotSay('Hunting for screens'+(team?' for the '+team+' game':'')+' — pubs and sports bars near '+whereSaid+'…');
     try{
       const j=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({q:'sports pub showing live football', keyword:true, lat:near[0], lng:near[1]})}).then(r=>r.json());
@@ -4690,11 +4725,14 @@ async function ask(text, fresh){
          && text.match(/\b(?:watch|see|catch|showing)\s+(.{2,40}?)(?:\s+(?:today|tonight|tomorrow|this\s+week(?:end)?))?\s*[?.!]*$/i)));
   const cinemaAsk=/\b(cinemas?|movie theat|showtimes?|film times)\b/i.test(text) && /\b(near|around|close|where|any|good)\b/i.test(text);
   if(filmQ || cinemaAsk){
-    const film=filmQ?filmQ[1].replace(/^(the\s+new\s+|the\s+|a\s+|new\s+)/i,'').trim():null;
-    const near=S.me||(map?[map.getCenter().lat,map.getCenter().lng]:null);
+    const film=filmQ?filmQ[1].replace(/^(the\s+new\s+|the\s+|a\s+|new\s+)/i,'')
+      .replace(/\s+(?:in|near|around)\s+.*$/i,'').trim():null;
+    const loc=askedNear(text);
+    const near=(loc&&loc.pt)||S.me||(map?[map.getCenter().lat,map.getCenter().lng]:null);
     if(!near){ pushBotSay('Tap the locate button (or name an area) and I’ll line up the cinemas around it.'); return; }
-    pushBotSay(film?('Checking the big screens near '+(S.me?'you':'the map')+' for '+film+'…')
-                   :('Lining up the cinemas near '+(S.me?'you':'the map')+'…'));
+    const whereSaid=loc?loc.label:(S.me?'you':'the map');
+    pushBotSay(film?('Checking the big screens near '+whereSaid+' for '+film+'…')
+                   :('Lining up the cinemas near '+whereSaid+'…'));
     try{
       const j=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({q:'cinema', keyword:true, lat:near[0], lng:near[1]})}).then(r=>r.json());
@@ -5822,6 +5860,7 @@ function planView(r){
     const el2=document.createElement('div');
     el2.className='rleg acard'+(d2.src==='mine'?' mine':'');
     el2.innerHTML=
+      thumbHtml(d2.n, d2.hood||d2.area)+
       '<div class="rbody">'+
         '<div class="pin" style="background:'+css('--'+d2.c)+'">'+svg(d2.c)+'</div>'+
         '<div class="rtext"><h3>'+esc(d2.n)+'</h3>'+
@@ -5829,7 +5868,7 @@ function planView(r){
           '<div class="tagrow">'+ob2+
             (d2.src==='mine'?'<span class="tag mine">yours</span>':'')+
             (isCur?'<span class="tag">the pick</span>':'')+
-          '</div></div>'+thumbHtml(d2.n, d2.hood||d2.area)+'</div>'+
+          '</div></div></div>'+
       '<div class="acardrow">'+
         (isCur?'':'<button class="mkstart" type="button">make it the start</button>')+
         (planForming()?'<button class="addplan" type="button">+ plan</button>':'')+
@@ -7688,7 +7727,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='4:37 pm, 21 Aug';
+  const BUILT='4:50 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
