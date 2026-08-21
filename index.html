@@ -1434,6 +1434,10 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   flex:0 0 min(320px, 82%); scroll-snap-align:start; margin:0;
   border:1px solid var(--line) !important; border-radius:14px;
   background:var(--surface-2); align-self:stretch}
+/* onward options as cards: each "then go on to" is its own swipeable card */
+.optrow.onwardrow .after{flex:0 0 min(280px, 74%); scroll-snap-align:start;
+  border:1px solid var(--line); border-radius:14px; background:var(--surface-2);
+  margin:0; align-self:stretch}
 .optmore{flex:0 0 auto; align-self:center; border:1px solid var(--line);
   background:var(--chip); color:var(--ink-2); border-radius:999px;
   padding:8px 14px; font-size:12.5px; cursor:pointer; white-space:nowrap}
@@ -2406,9 +2410,17 @@ function partyFrom(t){
    good-for lines. This is the corpus a free-text ask searches. */
 function textOf(d){
   if(d._txt) return d._txt;
+  /* OCR row-bleed guard: the Olaloye import left some blurbs holding a
+     NEIGHBOURING entry's name (Singburi carrying "Alhaji SUYA Brixton"),
+     which made a Thai place answer for suya. A "write-up" that is exactly
+     another venue's name is noise, never evidence. */
+  if(!textOf._names) textOf._names=new Set(DATA.map(x=>x.n.toLowerCase().trim()));
   const bits=[d.n, d.t, d.cui, d.hood, d.area, (d.tags||[]).join(' '),
     (d.orders||[]).join(' '), (d.vibes||[]).join(' '),
-    (d.m||[]).map(m=>m.b||'').join(' ')];
+    (d.m||[]).map(m=>m.b||'')
+      .filter(b=>{ const k=String(b).toLowerCase().trim();
+        return !(textOf._names.has(k) && k!==d.n.toLowerCase().trim()); })
+      .join(' ')];
   const e=(typeof enrGet==='function')?enrGet(d.n):null;
   if(e) bits.push(e.vibe, e.description, (e.bestFor||[]).join(' '),
     (e.order||[]).join(' '), (e.tags||[]).join(' '));
@@ -4798,10 +4810,14 @@ async function ask(text, fresh){
         conv:(focusAsk||chatty)?S.conv.slice(-8):undefined})});
     const d=await r.json();
     /* the model just TALKED — an answer in words, or an honest "can't do
-       that yet". No list, no cards, no machinery. */
+       that yet". No list, no cards, no machinery. But ONE AUTHORITY PER ASK:
+       if the local parser already answered with places, that answer stands —
+       a stray remark must never wipe a result off the screen. */
     if(d && d.say && d.say.reply){
-      latestEl.innerHTML=''; S.plan=null; countEl.textContent='—'; setPromptHint();
-      pushBotSay(d.say.reply);
+      if(!local){
+        latestEl.innerHTML=''; S.plan=null; countEl.textContent='—'; setPromptHint();
+        pushBotSay(d.say.reply);
+      }
       return;
     }
     if(d && d.plan){
@@ -5392,7 +5408,10 @@ function planView(r){
     wrap.appendChild(n);
     return wrap;
   }
-  on.forEach(o=>{
+  /* the onward options are a HAND OF CARDS on the phone — swipe through
+     where the night could go, the same gesture as everywhere else. The map
+     follows the flick. Desktop keeps the readable column. */
+  const mkRow=o=>{
     const ost=openState(o.d.n, o.arrive);
     const row=document.createElement('div');
     row.className='after'+(o.d.src==='mine'?' mine':'');
@@ -5409,8 +5428,16 @@ function planView(r){
         /* on a fixed route a shut stop is said plainly, never reordered */
         : (r.route && ost && !ost.open ? '<span class="shut">shut then</span>' : ''));
     row.onclick=()=>openDetail(o.d,true);
-    wrap.appendChild(row);
-  });
+    return row;
+  };
+  if(window.innerWidth<=860 && on.length>1 && !r.route){
+    const rowc=document.createElement('div'); rowc.className='optrow onwardrow';
+    on.forEach(o=>rowc.appendChild(mkRow(o)));
+    wrap.appendChild(rowc);
+    trackOptrow(rowc, on, o=>o.d.lat?[o.d.lat,o.d.lng]:null);
+  } else {
+    on.forEach(o=>wrap.appendChild(mkRow(o)));
+  }
   return wrap;
 }
 
