@@ -777,6 +777,10 @@ a{color:var(--accent)}
   display:grid; place-items:center;
 }
 .search.has .mic, .search.ask .mic{display:none}
+/* while listening the mic OWNS its corner — it is the stop button — and the
+   send/clear buttons wait their turn until dictation is done */
+.search.rec .mic{display:grid !important}
+.search.rec .send, .search.rec .clr{display:none !important}
 .search .mic.rec{background:#d6452a; color:#fff; animation:micpulse 1.2s ease-in-out infinite}
 @keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(214,69,42,.45)}50%{box-shadow:0 0 0 7px rgba(214,69,42,0)}}
 .search input, .search textarea{padding-right:44px}
@@ -1297,6 +1301,14 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .addwrap .addbox .grab{display:block; padding:4px 0 8px; cursor:grab}
   .addwrap .addbox .grab i{display:block; width:40px; height:4px; border-radius:99px;
     background:var(--line); margin:0 auto}
+  /* the event card reads like a note, not a tag cloud */
+  .evline{margin:0 0 9px; font-size:14.5px; line-height:1.55; color:var(--ink-2)}
+  .evline b{color:var(--ink)}
+  .evgoing{margin:0 0 10px; padding:8px 11px; border-radius:10px; font-size:13px;
+    background:rgba(53,185,138,.14); border:1px solid rgba(53,185,138,.35); color:var(--ink)}
+  /* plan stops on the map: numbered, in the accent */
+  .mk.plannum{background:var(--accent); color:var(--accent-ink); font-weight:700;
+    display:grid; place-items:center; font-size:13px}
   /* the drawer's drop-downs: library and events unfold IN PLACE — peeking at
      either never costs the conversation in the chat */
   .libbox{margin:2px 0 6px; border:1px solid var(--line); border-radius:12px;
@@ -1549,6 +1561,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
             their page weekly. (RA blocks robots, so RA links won&rsquo;t work here.)</p>
         </div>
         <button class="mbrowse" id="addphoto" type="button">Attach a photo — a flyer, a place, a screenshot</button>
+        <button class="mbrowse" id="sethome" type="button">Set here as Home</button>
         <input type="file" id="photoin" accept="image/*" hidden>
         <!-- fresh chat is a GESTURE (throw the sheet down); this hook keeps the
              programmatic path for tests and keyboards -->
@@ -2008,32 +2021,52 @@ document.getElementById('sendq').onclick=()=>{ if(askable()) ask(q.value.trim())
     mb.onclick=()=>toast('Voice isn’t available in this browser — the keyboard’s own mic still works.');
     return;
   }
-  let rec=null, listening=false, heard='';
-  mb.onclick=()=>{
-    if(listening){ try{rec.stop();}catch(e){} return; }
+  /* PATIENT listening: tap to start, tap again when done. Words land in the
+     box live as you speak; pauses never cut you off (the engine is restarted
+     under the hood when the browser gives up on silence); and NOTHING sends
+     until you press send yourself — you get to read what it heard. */
+  let rec=null, listening=false, stopWanted=false, base='';
+  const stopUI=()=>{ listening=false; mb.classList.remove('rec');
+    sw.classList.remove('rec'); setPromptHint(); };
+  const begin=()=>{
     rec=new SR();
-    rec.lang='en-GB'; rec.interimResults=true; rec.continuous=false;
-    heard='';
-    rec.onstart=()=>{ listening=true; mb.classList.add('rec'); q.placeholder='Listening…'; };
+    rec.lang='en-GB'; rec.interimResults=true; rec.continuous=true;
+    base=q.value?q.value.trim()+' ':'';
+    rec.onstart=()=>{ listening=true; stopWanted=false;
+      mb.classList.add('rec'); sw.classList.add('rec');
+      q.placeholder='Listening — tap the mic again when you’re done…'; };
     rec.onresult=ev=>{
-      let s=''; for(const r of ev.results) s+=r[0].transcript;
-      heard=s.trim();
-      q.value=heard; qGrow();
-      sw.classList.toggle('has',!!q.value);
+      let fin='', inter='';
+      for(let i=0;i<ev.results.length;i++){
+        const r=ev.results[i];
+        if(r.isFinal) fin+=r[0].transcript; else inter+=r[0].transcript;
+      }
+      q.value=(base+fin+inter).replace(/\s+/g,' ');
+      qGrow(); sw.classList.toggle('has',!!q.value.trim());
     };
     rec.onerror=ev=>{
-      listening=false; mb.classList.remove('rec'); setPromptHint();
-      if(ev.error==='not-allowed'||ev.error==='service-not-allowed')
+      if(ev.error==='no-speech') return;      // silence is allowed — onend restarts
+      if(ev.error==='not-allowed'||ev.error==='service-not-allowed'){
+        stopWanted=true; stopUI();
         toast('Microphone permission was refused — allow it for this site to talk.');
-      else if(ev.error!=='aborted' && ev.error!=='no-speech')
-        toast('Couldn’t hear that — try again.');
+      }
     };
     rec.onend=()=>{
-      listening=false; mb.classList.remove('rec'); setPromptHint();
-      if(heard && heard.length>=2) ask(heard);
-      else { q.value=''; sw.classList.remove('has'); qGrow(); }
+      /* the browser times out on quiet thinkers — keep listening until the
+         person, not the engine, says they're done */
+      if(listening && !stopWanted){
+        base=q.value?q.value.trim()+' ':'';
+        try{ rec.start(); return; }catch(e){}
+      }
+      stopUI();
+      sw.classList.toggle('ask', askable());
+      if(q.value.trim()) q.focus();           // hand it back for a read-through
     };
-    try{ rec.start(); }catch(e){ toast('Voice couldn’t start just now.'); }
+    try{ rec.start(); }catch(e){ stopUI(); toast('Voice couldn’t start just now.'); }
+  };
+  mb.onclick=()=>{
+    if(listening){ stopWanted=true; try{rec.stop();}catch(e){ stopUI(); } return; }
+    begin();
   };
 })();
 
@@ -3033,7 +3066,9 @@ function runPlan(plan){
   drawNearbyMarkers([]);   // ambient/stale Google pins never survive into a new plan
   /* -------- events: the outside layer reads the feed, not the bank -------- */
   if(plan.eventsAsk){
-    const origin=planOrigin(plan);
+    /* dancing after the plan: the origin is the table you'll be leaving */
+    const origin=plan._afterPt?{pt:plan._afterPt, label:plan._afterLabel||'your last stop'}
+      :planOrigin(plan);
     const now=Date.now();
     let evs=EVENTS.filter(e=>Date.parse(e.start)>=now-6*3600e3);
     if(plan.evWhen==='tonight'){
@@ -3056,7 +3091,8 @@ function runPlan(plan){
       evs=evs.filter(e=>{const s0=Date.parse(e.start); return s0>=+from && s0<=+to;});
     } else evs=evs.filter(e=>Date.parse(e.start)<=now+14*86400e3);
     if(origin) evs.sort((a,b)=>{
-      const da=a.lat?dist(origin.pt,[a.lat,a.lng]):99, db=b.lat?dist(origin.pt,[b.lat,b.lng]):99;
+      const pa=evPlace(a), pb=evPlace(b);
+      const da=pa?dist(origin.pt,[pa.lat,pa.lng]):99, db=pb?dist(origin.pt,[pb.lat,pb.lng]):99;
       return (da-db)||(Date.parse(a.start)-Date.parse(b.start));
     });
     const label=plan.evWhen==='tonight'?'tonight':plan.evWhen==='weekend'?'this weekend'
@@ -3426,7 +3462,10 @@ async function loadLamp(){
     LAMP_PROGRESS=j.progress||null;
     if(added){ refreshSrcChips(); if(!S.plan) render(); }
     updateBankCount();
-    if(added) toast(added+' more from Angus’s list — '+DATA.length+' places now');
+    /* only worth saying while the import is genuinely still running — the
+       routine re-merge on every open is not news */
+    if(added && LAMP_PROGRESS && LAMP_PROGRESS.done < LAMP_PROGRESS.total)
+      toast(added+' more from Angus’s list — '+DATA.length+' places now');
     /* the import takes hours: keep checking every couple of minutes while it
        runs, so the number climbs on its own instead of looking stuck */
     if(LAMP_PROGRESS && LAMP_PROGRESS.done < LAMP_PROGRESS.total){
@@ -3566,6 +3605,24 @@ function enrHtml(d){
 /* ---- the outside layer: the events feed, scouted weekly ---- */
 let EVENTS=[], EVENTS_META=null;
 let EVVEN={};   // venues the events have taught: lower(name) -> real place
+let EVMARKS={}; // the personal layer: {eventId: {fav, going:'tickets'|'guestlist'}}
+
+/* one pass-minding POST for any personal write — asks once, remembers,
+   retries once on a stale pass. Used by event marks, plans, everything. */
+async function authPost(url, payload){
+  let pass=localStorage.getItem(PASSKEY);
+  if(!pass){ pass=await askPass(); if(!pass) return null; }
+  const go=p=>fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(Object.assign({}, payload, {pass:p}))}).then(r=>r.json());
+  let j=await go(pass);
+  if(j && j.error==='bad_pass'){
+    localStorage.removeItem(PASSKEY);
+    const again=await askPass(); if(!again) return j;
+    pass=again; j=await go(pass);
+  }
+  if(j && !j.error) localStorage.setItem(PASSKEY, pass);
+  return j;
+}
 async function loadEvents(){
   try{
     const r=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -3573,6 +3630,7 @@ async function loadEvents(){
     const d=await r.json();
     if(d && Array.isArray(d.events)){ EVENTS=d.events; EVENTS_META={count:d.count, refreshedAt:d.refreshedAt}; }
     if(d && d.venues && typeof d.venues==='object') EVVEN=d.venues;
+    if(d && d.marks && typeof d.marks==='object') EVMARKS=d.marks;
     learnEventVenues();          // events teach the bank, quietly
   }catch(e){ /* offline or not deployed yet: the ask answers honestly */ }
 }
@@ -3643,22 +3701,14 @@ function openEventDetail(e){
   const pl=evPlace(e);
   dname.textContent=e.title||'Event';
   const d0=new Date(e.start);
-  const bits=[];
-  bits.push('<span class="tag">'+esc(d0.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'short'}))+'</span>');
   let tm=String(d0.getHours()).padStart(2,'0')+':'+String(d0.getMinutes()).padStart(2,'0');
   let endNote='';
   if(e.end){ const de=new Date(e.end);
     if(!isNaN(de.getTime())) tm+=' – '+String(de.getHours()).padStart(2,'0')+':'+String(de.getMinutes()).padStart(2,'0'); }
   else endNote=' · no end time listed';
-  bits.push('<span class="tag">'+esc(tm+endNote)+'</span>');
-  if(e.venue) bits.push('<span class="tag">'+esc(e.venue)+(pl&&pl.approx?' · placed by its area':'')+'</span>');
-  (e.genres||[]).slice(0,3).forEach(g=>bits.push('<span class="tag">'+esc(g)+'</span>'));
+  /* words first, easy to read; the flyer lives DOWN the scroll at full size */
   const ps=document.getElementById('photoslot'); if(ps) ps.innerHTML='';
-  /* WHERE, plainly: venue, street, area — plus what the app has learned about
-     the venue from resolving it, and how far it is from you */
   const learned=EVVEN[String(e.venue||'').trim().toLowerCase()];
-  /* the VENUE leads — its resolved name (the one the learning pipeline banked
-     and the wider intelligence knows), then street, then area */
   const vname=(learned&&learned.name)||e.venue||null;
   const whereBits=[
     vname?('<b>'+esc(vname)+'</b>'+(learned&&learned.name&&e.venue&&learned.name!==e.venue
@@ -3667,40 +3717,67 @@ function openEventDetail(e){
     e.area?esc(e.area):null
   ].filter(Boolean).filter((v,i,arr)=>arr.indexOf(v)===i);
   const distTxt=(S.me&&pl)?fmtDist(dist(S.me,[pl.lat,pl.lng]))+' from you':null;
-  dbody.innerHTML='<div class="tagrow" style="margin:4px 0 10px">'+bits.join('')+'</div>'+
-    '<p style="margin:0 0 8px"><b>Where:</b> '+
-      (whereBits.length?whereBits.join(' · '):'not published — the tickets page will say')+
+  const mark0=EVMARKS[e.id]||{};
+  const line=(label,val)=>'<p class="evline">'+(label?'<b>'+label+'</b> ':'')+val+'</p>';
+  dbody.innerHTML=
+    (mark0.going?'<p class="evgoing">🎟 You’re going'+(mark0.going==='guestlist'?' — on the guest list':' — got tickets')+'</p>':'')+
+    line('When:', esc(d0.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'short'}))+' · '+esc(tm+endNote))+
+    line('Where:', (whereBits.length?whereBits.join(' · '):'not published — the tickets page will say')+
       (distTxt?' · '+esc(distTxt):'')+
-      (pl&&pl.approx?' <span class="usrc">(pinned by its area — no exact address yet)</span>':'')+'</p>'+
-    ((e.artists||[]).length?'<p style="margin:0 0 8px"><b>Line-up:</b> '+esc(e.artists.join(', '))+'</p>':'')+
-    (e.why?'<p style="margin:0 0 8px">'+esc(e.why)+'</p>':'')+
+      (pl&&pl.approx?' <span class="usrc">(pinned by its area — no exact address yet)</span>':''))+
+    ((e.artists||[]).length?line('Line-up:', esc(e.artists.join(', '))):'')+
+    (e.why?line('', esc(e.why)):'')+
+    ((e.genres||[]).length?'<div class="tagrow" style="margin:2px 0 8px">'+
+      (e.genres||[]).slice(0,4).map(g=>'<span class="tag">'+esc(g)+'</span>').join('')+'</div>':'')+
     '<p class="usrc" style="margin:0">Scouted via '+esc(e.src||'the feed')+'.'+
-    (pl?'':' No location could be pinned for this one — the tickets page will say.')+'</p>';
-  /* the flyer: pulled once from the event page's own share-image, cached */
+    (pl?'':' No location could be pinned for this one — the tickets page will say.')+'</p>'+
+    '<div id="evflyerslot"></div>';
+  /* the flyer: the poster itself, full width and never cropped, further down
+     the scroll where it has room to be looked at. Tap it for the tickets. */
   if(e.id){
     fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'flyer', id:e.id})}).then(r=>r.json()).then(j=>{
       if(!j || !j.ok || dname.textContent!==(e.title||'Event')) return;
-      if(j.image && ps){
-        /* the WHOLE flyer, uncropped — it is the poster, not a thumbnail.
-           Tapping it goes where the flyer would take you: the tickets page. */
-        /* the WHOLE flyer, never cropped — but bounded, so the card beneath
-           it still scrolls. Tap for the real thing on the tickets page. */
-        ps.innerHTML='<div class="gphoto" style="text-align:center"><img src="'+esc(j.image)+'" alt="" '+
-          'style="max-width:100%;max-height:38dvh;width:auto;height:auto;display:inline-block;'+
-          'border-radius:14px;cursor:pointer"></div>';
-        const im=ps.querySelector('img');
+      const slot=document.getElementById('evflyerslot');
+      if(j.image && slot){
+        slot.innerHTML='<img src="'+esc(j.image)+'" alt="the flyer" '+
+          'style="width:100%;height:auto;display:block;border-radius:14px;margin-top:12px;cursor:pointer">';
+        const im=slot.querySelector('img');
         if(im && e.url) im.onclick=()=>window.open(e.url,'_blank','noopener');
       }
-      if(j.desc && !e.why) dbody.insertAdjacentHTML('beforeend',
-        '<p style="margin:8px 0 0">'+esc(j.desc)+'</p>');
+      if(j.desc && !e.why && slot) slot.insertAdjacentHTML('beforebegin',
+        '<p class="evline">'+esc(j.desc)+'</p>');
     }).catch(()=>{});
   }
   const va=findVenue(e.venue||'');
-  dactions.innerHTML=(e.url?'<a class="btn pri" target="_blank" rel="noopener" href="'+esc(e.url)+'">Tickets</a>':'')+
-    (va?'<button class="btn" id="devvenue">The venue: '+esc(va.n)+'</button>':'');
-  const vb=document.getElementById('devvenue');
-  if(vb) vb.onclick=()=>openDetail(va,true);
+  const drawActions=()=>{
+    const m=EVMARKS[e.id]||{};
+    dactions.innerHTML=
+      (e.url?'<a class="btn pri" target="_blank" rel="noopener" href="'+esc(e.url)+'">Tickets</a>':'')+
+      '<button class="btn" id="evgoing2">'+(m.going?'🎟 Going':'I’ve got tickets')+'</button>'+
+      '<button class="btn" id="evfav2">'+(m.fav?'♥ Loved':'♡ Love it')+'</button>'+
+      '<button class="btn" id="evplan2">Plan around it</button>'+
+      (va?'<button class="btn" id="devvenue">Venue: '+esc(va.n)+'</button>':'');
+    const gb=document.getElementById('evgoing2');
+    if(gb) gb.onclick=async()=>{ gb.disabled=true;
+      const j=await authPost('/api/events',{action:'mark', id:e.id, going:!(EVMARKS[e.id]||{}).going});
+      gb.disabled=false;
+      if(j && j.ok){ if(j.mark) EVMARKS[e.id]=j.mark; else delete EVMARKS[e.id];
+        drawActions();
+        toast(j.mark&&j.mark.going?'Noted — you’re going. It can anchor a plan now.':'Okay — not going.'); }
+    };
+    const fb=document.getElementById('evfav2');
+    if(fb) fb.onclick=async()=>{ fb.disabled=true;
+      const j=await authPost('/api/events',{action:'mark', id:e.id, fav:!(EVMARKS[e.id]||{}).fav});
+      fb.disabled=false;
+      if(j && j.ok){ if(j.mark) EVMARKS[e.id]=j.mark; else delete EVMARKS[e.id]; drawActions(); }
+    };
+    const pb=document.getElementById('evplan2');
+    if(pb) pb.onclick=()=>{ document.getElementById('dclose').click(); planFromEvent(e); };
+    const vb=document.getElementById('devvenue');
+    if(vb) vb.onclick=()=>openDetail(va,true);
+  };
+  drawActions();
   detail.classList.add('open'); document.body.classList.add('detail-open');
   if(pl){ drawEventMarkers([e]);
     setTimeout(()=>{ map.invalidateSize(); focusPin(pl.lat, pl.lng); },120); }
@@ -4048,7 +4125,18 @@ function chaseThin(plan, res, textOverride){
   if(bankThin(res)) fetchSuggestions(text, known, true);
   else { S.sug={idle:true, text, known}; renderPlan(); }
 }
+/* the app remembers what IT put forward — "what was that place you
+   suggested?" deserves an answer tomorrow, not a shrug */
+function rememberShown(name, area, note){
+  try{
+    let h=JSON.parse(localStorage.getItem('otp:v1:sughist')||'[]');
+    h=h.filter(x=>x.n!==name);
+    h.unshift({n:name, a:area||'', w:(note||'').slice(0,90), t:Date.now()});
+    localStorage.setItem('otp:v1:sughist', JSON.stringify(h.slice(0,40)));
+  }catch(e){}
+}
 function sugCard(p){
+  rememberShown(p.name, p.area||p.address||'', p.why||p.blurb||'');
   const el=document.createElement('div');
   el.className='card sug'; el.tabIndex=0;
   /* nearby results carry Google's live open flag; model discoveries fall
@@ -4416,6 +4504,94 @@ async function ask(text, fresh){
   if(document.body.classList.contains('detail-open'))
     document.getElementById('dclose').click();
   pushTurn(text); // the ask joins the conversation before anything is worked out
+
+  /* -------- a travel question gets TRANSPORT, in words --------
+     "how long to get to battersea?" → TfL's live journey planner, spoken
+     back as a sentence. Never a list of places nobody asked for. */
+  const trav=text.match(/how\s+(?:long|far)\b[^?]*?\bto\s+(?:get\s+to|reach)\s+(.+?)\s*\??\s*$/i)
+    || text.match(/how\s+do\s+(?:i|we|you)\s+get\s+to\s+(.+?)\s*\??\s*$/i)
+    || text.match(/how\s+far\s+(?:is|to)\s+(.+?)\s*\??\s*$/i)
+    || text.match(/how\s+long\s+(?:is\s+it\s+)?to\s+(.+?)\s*\??\s*$/i);
+  if(trav){
+    const destName=trav[1].replace(/\bfrom (here|me|mine)\b.*$/i,'').trim();
+    const v=findVenue(destName);
+    const g=v?null:findPlaces(' '+destName.toLowerCase()+' ')[0];
+    const lv=(!v&&!g)?EVVEN[destName.toLowerCase()]:null;
+    const dest=v?{lat:v.lat,lng:v.lng,label:v.n}
+      :g&&g.lat!=null?{lat:g.lat,lng:g.lng,label:g.name}
+      :lv?{lat:lv.lat,lng:lv.lng,label:lv.name}:null;
+    const orgPt=(focus&&focus.lat!=null)?[focus.lat,focus.lng]:S.me;
+    const orgSay=(focus&&focus.lat!=null)?focus.n:'you';
+    if(!dest){
+      pushBotSay('I don’t know where “'+destName+'” is yet — give me a venue or an area I’d recognise and I’ll time it.');
+      return;
+    }
+    if(!orgPt){
+      pushBotSay('I can time that with live TfL data, but I don’t have your location — tap the locate button, then ask me again.');
+      return;
+    }
+    pushBotSay('Asking TfL…');
+    try{
+      const r=await fetch('/api/tfl',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({journey:true, a:{lat:orgPt[0],lng:orgPt[1]}, b:{lat:dest.lat,lng:dest.lng}})});
+      const j=await r.json();
+      if(j && isFinite(j.mins)){
+        pushBotSay('About '+j.mins+' minutes from '+orgSay+' to '+dest.label+' right now'+
+          ((j.legs||[]).length?' — '+j.legs.join(', ')+'.':'.')+
+          ' That’s TfL’s own live journey planner talking, not a guess.');
+      } else {
+        pushBotSay('TfL couldn’t plan that one just now'+(j&&j.error?' ('+j.error+')':'')+
+          ' — as the crow flies it’s '+fmtDist(dist(orgPt,[dest.lat,dest.lng]))+'.');
+      }
+    }catch(e){
+      pushBotSay('I couldn’t reach TfL just now — as the crow flies it’s '+
+        fmtDist(dist(orgPt,[dest.lat,dest.lng]))+' to '+dest.label+'.');
+    }
+    return;
+  }
+  /* -------- the plan on the table listens --------
+     with a plan open, "make the last one by 3am" / "push it to 2" sets the
+     target and the whole clock re-runs backwards, then re-saves */
+  if(ACTIVEPLAN && /\b(?:make|reach|be (?:at|there)|arrive|get there|push(?: it)?(?: to)?|by)\b/i.test(text)){
+    const m=text.match(/\b(?:by|to|at)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+    if(m){
+      let h=+m[1]; const min=+(m[2]||0); const mer=(m[3]||'').toLowerCase();
+      if(mer==='pm'&&h<12)h+=12; if(mer==='am'&&h===12)h=0;
+      const base=ACTIVEPLAN.when?new Date(ACTIVEPLAN.when):new Date();
+      const t=new Date(base); t.setHours(h,min,0,0);
+      if(t<base) t.setDate(t.getDate()+1);   // "by 3am" belongs to the NIGHT of the plan
+      ACTIVEPLAN.targetEnd=t.toISOString();
+      pushBotSay('Clock set — last stop by '+hmT(t)+'. Running it backwards…');
+      const clock=await planClock(ACTIVEPLAN);
+      pushBotSay(planSay(ACTIVEPLAN, clock));
+      savePlanObj(ACTIVEPLAN);
+      return;
+    }
+  }
+
+  /* -------- "what was that place you suggested?" — answered from memory */
+  if(/(what was (that|the) (place|restaurant|bar|spot|one)|what('s| is| was) (it|that place) called|can'?t remember (the |that |its )?(name|place|restaurant|spot)|which (place|restaurant|spot|one) did you (suggest|recommend|show|put forward))/i.test(text)){
+    let h=[]; try{ h=JSON.parse(localStorage.getItem('otp:v1:sughist')||'[]'); }catch(e){}
+    if(h.length){
+      const ago=t=>{ const hrs=Math.round((Date.now()-t)/3600e3);
+        return hrs<1?'just now':hrs<24?hrs+'h ago':Math.round(hrs/24)+'d ago'; };
+      const top=h.slice(0,5).map(x=>x.n+(x.a?' ('+x.a+')':'')+(x.w?' — '+x.w:'')+' · '+ago(x.t));
+      pushBotSay('Here’s what I’ve put in front of you lately: '+top.join('  ·  ')+
+        '. Say a name and I’ll pull its card up.');
+    } else {
+      pushBotSay('I haven’t suggested anything on this phone yet — once I do, I’ll remember it here.');
+    }
+    return;
+  }
+
+  /* question-shaped messages that aren't hunting for places go to the model
+     as CONVERSATION — it may answer in words, or say plainly what it can't
+     do. It must never turn "can you book a table?" into a list. */
+  const chatty=/^\s*(how|why|when|who|what|can|could|do|does|did|are|is|was|will|would|should)\b/i.test(text)
+    && !/\b(where|somewhere|anywhere|place|places|spot|spots|bar|bars|pub|pubs|club|clubs|eat|eats|food|dinner|lunch|brunch|breakfast|coffee|drink|drinks|dance|dancing|event|events|night out|park|shop|market|gallery|museum|restaurant|good for|best)\b/i.test(text)
+    && !EVENTWORDS.test(' '+text.toLowerCase().replace(/[’']/g,"'")+' ')
+    && !focusAsk;
+
   S.anchorPlace=null;
   /* an events answer is as much a conversation as a venue answer */
   const prevResult=(planActive() || (S.plan&&S.plan.type==='events'))?S.plan:null;
@@ -4427,12 +4603,23 @@ async function ask(text, fresh){
     /(imposs|can'?t be right|are you sure|surely not|no way|not true|don'?t believe|makes no sense|that'?s wrong|why (only|is|are|did|so))/i.test(text);
 
   /* a complete request of its own — a kind AND a place, or a curated day —
-     is a new ask, not a refinement of the last one */
+     is a new ask, not a refinement of the last one. BUT "I want to dance
+     after" mid-plan keeps the plan's NIGHT and PLACE: the events must be
+     that night's, ranked from the venue you'll already be at. */
+  let carryEv=null;
   if(prevPlan && !challenged){
     const asNew=parseLocal(text);
     if(asNew && asNew._strong &&
        ((asNew.locations&&asNew.locations.length) || (asNew.venues&&asNew.venues.length)
         || asNew.routeId || asNew.openNow || asNew.eventsAsk)){
+      if(asNew.eventsAsk){
+        const anch=(prevResult&&prevResult.type==='anchor'&&prevResult.anchor)?prevResult.anchor.d:null;
+        carryEv={
+          evDay:(S.planWhen instanceof Date)?S.planWhen.getDay():null,
+          pt:anch&&anch.lat?[anch.lat,anch.lng]:null,
+          label:anch?anch.n:null
+        };
+      }
       prevPlan=null; fresh=true;
     }
   }
@@ -4552,14 +4739,26 @@ async function ask(text, fresh){
   if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); }
   let local=parseLocal(text);
   /* said with "it/here" while a place card is open: the local parser would
-     misread "near here" as near-me — the model gets the place and decides */
-  if(focusAsk) local=null;
+     misread "near here" as near-me — the model gets the place and decides.
+     Chatty questions skip the local machinery for the same reason. */
+  if(focusAsk||chatty) local=null;
+  /* the carried context: dancing AFTER the date means THAT night, ranked
+     from the table you'll be leaving — never a fortnight of everything */
+  if(local && local.eventsAsk && carryEv){
+    if((local.evWhen==='all'||local.evWhen==null) && carryEv.evDay!=null){
+      local.evWhen='day'; local.evDay=carryEv.evDay;
+    }
+    if(!(local.locations&&local.locations.length) && !local.explicitNear && carryEv.pt){
+      local._afterPt=carryEv.pt; local._afterLabel=carryEv.label;
+      local.useMyLocation=false;
+    }
+  }
   /* Nothing recognisable — no kind, no area, no tag — but the words might
      still be written down somewhere in the bank: a dish from a write-up, a
      backstory, a name in a note. Search the text before giving up. Two or
      more matches means it is a search; a single match is a venue lookup, so
      that is left to looksLikeName below. */
-  if(!local && !focusAsk){
+  if(!local && !focusAsk && !chatty){
     const terms=termsFrom(text);
     const phrase=String(text).toLowerCase().replace(/[^a-z0-9 ]/g,' ')
       .split(/\s+/).filter(w=>w.length>2 && !STOPW.has(w)).join(' ');
@@ -4580,14 +4779,14 @@ async function ask(text, fresh){
         terms:terms.length?terms:[phrase], via:'built in', _strong:true, _textOnly:true, reply:null};
   }
   /* a bare venue name is "where is this place" — answer it, don't interrogate it */
-  if(!local && !focusAsk && looksLikeName(text)){ lookup(text); return; }
+  if(!local && !focusAsk && !chatty && looksLikeName(text)){ lookup(text); return; }
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
 
   /* the wider search is a model call plus several lookups. Run it only when
      your own bank came up short; otherwise offer it as a button. If the app
      is still locating them, the choice is made after the fix instead. */
-  chaseThin(local||{asked:text}, S.plan);
+  if(!chatty) chaseThin(local||{asked:text}, S.plan);
 
   // the built-in parser already read this one completely: no need to ask twice
   if(local && local._strong){ return; }
@@ -4596,8 +4795,15 @@ async function ask(text, fresh){
     const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({q:text,
         focus:focus?{name:focus.n, kind:focus.c, area:focus.hood||focus.area||''}:undefined,
-        conv:focusAsk?S.conv.slice(-8):undefined})});
+        conv:(focusAsk||chatty)?S.conv.slice(-8):undefined})});
     const d=await r.json();
+    /* the model just TALKED — an answer in words, or an honest "can't do
+       that yet". No list, no cards, no machinery. */
+    if(d && d.say && d.say.reply){
+      latestEl.innerHTML=''; S.plan=null; countEl.textContent='—'; setPromptHint();
+      pushBotSay(d.say.reply);
+      return;
+    }
     if(d && d.plan){
       d.plan.asked=text; d.plan.via='understood';
       /* the model doesn't carry these flags — read them off the sentence here,
@@ -4748,8 +4954,173 @@ function trackOptrow(row, items, at){
 /* one gesture, one meaning: throwing the sheet away IS starting fresh */
 function freshChat(){
   S.browse=false; clearPlan(); clearChat();
+  ACTIVEPLAN=null;
+  if(planLayer){ try{map.removeLayer(planLayer);}catch(e){} planLayer=null; }
   q.value=''; S.q=''; sw.classList.remove('has'); qGrow();
   toast('Fresh start — ask away');
+}
+
+/* ================= PLANS: a night held together =================
+   Assembled by the chat, timed by a clock run BACKWARDS from the moment that
+   matters ("make the dance by 3am"), kept in the bank, drawn on the map.
+   Loose is legal: a plan with no times is still a plan. */
+let PLANS=[], ACTIVEPLAN=null, planLayer=null;
+
+async function loadPlans(){
+  try{
+    const j=await fetch('/api/plans',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'list'})}).then(r=>r.json());
+    if(j && Array.isArray(j.plans)) PLANS=j.plans;
+  }catch(e){}
+  return PLANS;
+}
+
+/* travel minutes between stops: real TfL journeys, walking for short hops,
+   and an HONEST label when it had to estimate */
+const _legCache={};
+async function legMins(a, b, arriveAt){
+  const km=dist([a.lat,a.lng],[b.lat,b.lng]);
+  if(km<=1.1) return {mins:walkMins([a.lat,a.lng],[b.lat,b.lng]), how:'a '+walkMins([a.lat,a.lng],[b.lat,b.lng])+' min walk'};
+  /* planned for the plan's OWN hour — a Friday-evening leg must never be
+     routed on tonight's night buses. arriveBy because the clock runs backwards. */
+  const whenKey=arriveAt?new Date(arriveAt).toISOString().slice(0,13):'now';
+  const key=[a.lat,a.lng,b.lat,b.lng].map(x=>(+x).toFixed(4)).join(',')+'@'+whenKey;
+  if(_legCache[key]) return _legCache[key];
+  try{
+    const j=await fetch('/api/tfl',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({journey:true, arriveBy:!!arriveAt,
+        when:arriveAt?new Date(arriveAt).toISOString():undefined,
+        a:{lat:a.lat,lng:a.lng}, b:{lat:b.lat,lng:b.lng}})}).then(r=>r.json());
+    if(j && isFinite(j.mins))
+      return (_legCache[key]={mins:j.mins, how:(j.legs&&j.legs.length)?j.legs.join(', '):'by TfL'});
+  }catch(e){}
+  return {mins:Math.round(km/22*60)+10, how:'estimated — TfL unreachable'};
+}
+
+const HOMEKEY='otp:v1:home';
+function homePt(){ try{ const h=JSON.parse(localStorage.getItem(HOMEKEY)||'null');
+  return (h&&isFinite(h.lat)&&isFinite(h.lng))?h:null; }catch(e){ return null; } }
+function atHome(){ const h=homePt(); return !!(h && S.me && dist(S.me,[h.lat,h.lng])<0.25); }
+
+const hmT=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+const PLANDWELL={eat:105, drink:120, coffee:45, culture:90, event:0, any:75};
+
+/* the backward clock: pin the LAST stop's arrival, then walk the plan
+   backwards — leave X at (arrive Y − travel), arrive X at (leave − a fair
+   stay). The first stop also gets a set-off time from home or from you. */
+async function planClock(plan){
+  const out=plan.stops.map(s=>({stop:s}));
+  if(!plan.targetEnd) return out;            // loose plan: no clock, no shame
+  let arrive=new Date(plan.targetEnd);
+  if(isNaN(arrive.getTime())) return out;
+  for(let i=plan.stops.length-1;i>=0;i--){
+    const s=plan.stops[i], o=out[i];
+    if(s.lat==null){ o.note='no pin, not timed'; continue; }
+    o.arrive=new Date(arrive);
+    if(i>0){
+      const prev=plan.stops[i-1];
+      if(prev.lat!=null){
+        const leg=await legMins(prev, s, arrive);
+        o.leg=leg;
+        const leave=new Date(arrive.getTime()-leg.mins*60000);
+        out[i-1].leave=leave;
+        arrive=new Date(leave.getTime()-(PLANDWELL[prev.kind]||PLANDWELL.any)*60000);
+      }
+    } else {
+      const org=atHome()?homePt():(S.me?{lat:S.me[0],lng:S.me[1]}:null);
+      if(org){
+        const leg=await legMins(org, s, o.arrive);
+        o.setOff={at:new Date(o.arrive.getTime()-leg.mins*60000), leg,
+          from:atHome()?'home':'where you are'};
+      }
+    }
+  }
+  return out;
+}
+
+function planSay(plan, clock){
+  const bits=plan.stops.map((s,i)=>{
+    const c=(clock&&clock[i])||{};
+    let t=s.n;
+    if(c.arrive) t+=' '+hmT(c.arrive)+(c.leave?'–'+hmT(c.leave):'');
+    if(c.leg && i>0) t='('+c.leg.mins+' min: '+c.leg.how+') → '+t;
+    return t;
+  });
+  let say=plan.title+
+    (plan.when?' · '+new Date(plan.when).toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'short'}):'')+
+    ': '+bits.join('  ·  ');
+  const first=clock&&clock[0];
+  if(first&&first.setOff)
+    say+='. Set off from '+first.setOff.from+' by '+hmT(first.setOff.at)+' ('+first.setOff.leg.how+').';
+  if(!plan.targetEnd)
+    say+=' — no times pinned yet. Say “make the last one by 2am” and I’ll run the clock backwards.';
+  return say;
+}
+
+function drawPlanMap(plan){
+  if(planLayer){ try{map.removeLayer(planLayer);}catch(e){} planLayer=null; }
+  const pts=plan.stops.filter(s=>s.lat!=null);
+  if(!pts.length) return;
+  planLayer=L.layerGroup([
+    L.polyline(pts.map(s=>[s.lat,s.lng]),{color:css('--accent'), weight:3, dashArray:'2 7', opacity:.9, interactive:false}),
+    ...pts.map((s,i)=>{
+      const m=L.marker([s.lat,s.lng],{icon:L.divIcon({className:'lm',
+        html:'<div class="mk plannum">'+(i+1)+'</div>', iconSize:[26,26], iconAnchor:[13,26]}), title:s.n});
+      /* every numbered pin answers a tap with its card */
+      m.on('click',()=>{
+        const ev0=s.evId?EVENTS.find(x=>x.id===s.evId):null;
+        if(ev0){ openEventDetail(ev0); return; }
+        const d0=DATA.find(x=>x.n===s.n)||findVenue(s.n);
+        if(d0) openDetail(d0,true);
+      });
+      return m;
+    })
+  ]).addTo(map);
+  try{ map.flyToBounds(L.latLngBounds(pts.map(s=>[s.lat,s.lng])),
+    {padding:[60,60], maxZoom:14.5, duration:.7}); }catch(e){}
+}
+
+async function openPlan(plan){
+  ACTIVEPLAN=plan;
+  drawPlanMap(plan);
+  /* opening a plan opens the CONVERSATION about it — never silent pins */
+  latestEl.innerHTML='';
+  countEl.textContent='plan · '+plan.title.slice(0,26);
+  document.body.classList.remove('home');
+  if(window.innerWidth<=860 && typeof applySnap==='function') applySnap(1);
+  pushBotSay('Plan open: '+plan.title+'. Working the clock…');
+  const clock=await planClock(plan);
+  pushBotSay(planSay(plan, clock)+
+    (plan.targetEnd?' Change it in your own words — “push it to 2am”, “make the last one by 3”.':'')+
+    ' Tap a numbered pin for its card. Done with it? Throw this sheet down twice — fresh chat, plan kept.');
+}
+
+async function savePlanObj(plan){
+  const j=await authPost('/api/plans',{action:'save', plan});
+  if(j && j.ok){
+    PLANS=PLANS.filter(p=>p.id!==j.plan.id); PLANS.unshift(j.plan);
+    return j.plan;
+  }
+  toast('Could not keep the plan'+(j&&j.error?' ('+j.error+')':'')+'.');
+  return null;
+}
+
+/* a plan seeded from an event you're going to: the event is the LAST stop,
+   its start time is the target the whole clock runs back from */
+async function planFromEvent(e){
+  const pl=evPlace(e);
+  const plan={
+    title:(e.title||'The night').slice(0,40),
+    when:e.start||null, targetEnd:e.start||null,
+    stops:[{n:e.title, lat:pl?pl.lat:null, lng:pl?pl.lng:null,
+      kind:'event', role:'the event', evId:e.id||null}]
+  };
+  const saved=await savePlanObj(plan);
+  if(saved){
+    toast('Plan started around the event.');
+    openPlan(saved);
+    pushBotSay('Now build backwards from it — “dinner near it first”, “drinks before”. Anything we add slots in ahead of the music.');
+  }
 }
 
 /* the input never wastes its words: at rest it invites, mid-conversation it
@@ -4767,8 +5138,10 @@ function setPromptHint(){
 function render(){
   setPromptHint();
   document.body.classList.toggle('thinking', !!(S.plan && S.plan.type==='thinking'));
-  /* at rest the phone shows map + composer only; the list is opt-in via ⋯ */
-  document.body.classList.toggle('home', window.innerWidth<=860 && !S.plan && !S.browse);
+  /* at rest the phone shows map + composer only — but a live conversation or
+     an open plan IS the screen's business, so the sheet stays */
+  document.body.classList.toggle('home', window.innerWidth<=860 && !S.plan && !S.browse
+    && !ACTIVEPLAN && !chatlog.childNodes.length);
   if(S.plan){ renderPlan(); return; }
   /* browsing the library is not a conversation: the transcript stands down */
   if(chatlog.childNodes.length) clearChat();
@@ -4857,8 +5230,26 @@ function planBar(p){
     ? ' · matched on “'+esc(p.plan._matched.slice(0,3).join('”, “'))+'”' : '';
   el.innerHTML='<div class="pb">'+esc((p.plan&&p.plan.reply)||('Looking for: '+((p.plan&&p.plan.asked)||'')))+
     '<span class="via">'+(p.origin?('from '+esc(p.origin.label)+' · '):'')+via+when+who+mid+wide+matched+hrs+'</span></div>'+
+    (p.type==='anchor'&&p.anchor?'<button id="keepplan">keep as plan</button>':'')+
     '<button id="clearplan">clear</button>';
-  setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
+  setTimeout(()=>{
+    const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;
+    const k=document.getElementById('keepplan');
+    if(k) k.onclick=async()=>{
+      k.disabled=true;
+      /* the answer on screen becomes a kept plan: the anchor, then what it
+         opened up — ready for the backward clock */
+      const stops=[{n:p.anchor.d.n, lat:p.anchor.d.lat, lng:p.anchor.d.lng,
+          kind:p.anchor.d.c, role:'first'}]
+        .concat((p.onward||[]).slice(0,2).map(o=>({n:o.d.n, lat:o.d.lat, lng:o.d.lng,
+          kind:o.d.c, role:'after'})));
+      const plan={title:((p.plan&&p.plan.asked)||'A plan').slice(0,40),
+        when:S.planWhen?S.planWhen.toISOString():null, targetEnd:null, stops};
+      const saved=await savePlanObj(plan);
+      k.disabled=false;
+      if(saved){ toast('Kept — it’s under Plans in the menu.'); openPlan(saved); }
+    };
+  },0);
   return el;
 }
 function pairCard(p){
@@ -5139,7 +5530,11 @@ function renderPlan(){
     if(!p.anchor){
       latestEl.insertAdjacentHTML('beforeend',
         '<div class="empty">Nothing in your bank fits that yet.<br>Try naming an area, or fewer conditions.</div>');
-    } else latestEl.appendChild(planView(p));
+    } else {
+      rememberShown(p.anchor.d.n, p.anchor.d.hood||p.anchor.d.area||'',
+        'picked for “'+((p.plan&&p.plan.asked)||'')+'”');
+      latestEl.appendChild(planView(p));
+    }
     drawAlts(p);
     renderSuggestions();
     if(!again && typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
@@ -6424,6 +6819,9 @@ layout();
 (function shellWiring(){
   const mw=document.getElementById('menuwrap');
   document.getElementById('menufab').onclick=()=>{
+    /* one surface at a time: an open card steps aside for the drawer */
+    if(document.body.classList.contains('detail-open')) document.getElementById('dclose').click();
+    const aw0=document.getElementById('addwrap'); if(aw0) aw0.hidden=true;
     const mc=document.getElementById('mcount'); if(mc) mc.textContent=DATA.length;
     mw.hidden=false;
   };
@@ -6477,8 +6875,30 @@ layout();
       eb.appendChild(b);
     });
   };
+  /* Plans in the drawer: your kept nights, tap to reopen — the map lays the
+     route out and the chat announces the clock */
   const mt=document.getElementById('menutrips');
-  if(mt) mt.onclick=()=>{ const tb=document.getElementById('tripbox'); if(tb) tb.hidden=!tb.hidden; };
+  if(mt) mt.onclick=async()=>{
+    const tb=document.getElementById('tripbox');
+    tb.hidden=!tb.hidden;
+    if(tb.hidden) return;
+    tb.innerHTML='<span class="msub">Fetching your plans…</span>';
+    const plans=await loadPlans();
+    if(!plans.length){
+      tb.innerHTML='No plans kept yet. Build a night in the chat and press '+
+        '“keep as plan”, or open an event and “Plan around it”.';
+      return;
+    }
+    tb.innerHTML='';
+    plans.forEach(pl2=>{
+      const b=document.createElement('button'); b.className='librow'; b.type='button';
+      b.innerHTML='<span><b>'+esc(pl2.title)+'</b></span><span class="sub2">'+
+        (pl2.when?esc(new Date(pl2.when).toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}))+' · ':'')+
+        pl2.stops.length+' stop'+(pl2.stops.length===1?'':'s')+'</span>';
+      b.onclick=()=>{ mw.hidden=true; openPlan(pl2); };
+      tb.appendChild(b);
+    });
+  };
   /* the filter machinery folds away behind one pill — the drawer stays clean */
   const mf=document.getElementById('menufilters');
   if(mf) mf.onclick=()=>{ const s2=document.getElementById('mslot2');
@@ -6487,7 +6907,21 @@ layout();
      scout reads weekly. A fresh chat lives in here too, not on the main key. */
   const aw=document.getElementById('addwrap');
   const ab2=document.getElementById('addbtn');
-  if(ab2) ab2.onclick=()=>{ aw.hidden=false; };
+  if(ab2) ab2.onclick=()=>{
+    /* one surface at a time: an open card steps aside for the add sheet */
+    if(document.body.classList.contains('detail-open')) document.getElementById('dclose').click();
+    mw.hidden=true;
+    aw.hidden=false;
+  };
+  /* Home: set once, and plans time your first leg from it whenever you're
+     there — "leave home by 19:40", not a guess */
+  const sh=document.getElementById('sethome');
+  if(sh) sh.onclick=()=>{
+    if(!S.me){ toast('I don’t have your location — tap the locate button first.'); return; }
+    localStorage.setItem(HOMEKEY, JSON.stringify({lat:S.me[0], lng:S.me[1]}));
+    aw.hidden=true;
+    toast('Home set. When you’re here, plans will say “set off from home by…”');
+  };
   if(aw) aw.onclick=e=>{ if(e.target===aw) aw.hidden=true; };
   /* every sheet answers the same gesture: swipe it down, it goes away */
   (function(){

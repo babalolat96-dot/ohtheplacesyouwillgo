@@ -27,8 +27,9 @@ exports.handler = async (event) => {
   if (![alat, alng, blat, blng].every(isFinite) || !inLondon(alat, alng) || !inLondon(blat, blng))
     return { statusCode: 200, headers, body: JSON.stringify({ error: 'bad_points' }) };
 
-  // journey planned for the time they actually mean, not for right now
-  const qs = new URLSearchParams({ timeIs: 'Departing' });
+  // journey planned for the time they actually mean, not for right now —
+  // and a backward clock asks to ARRIVE by a moment, not to depart at one
+  const qs = new URLSearchParams({ timeIs: body.arriveBy ? 'Arriving' : 'Departing' });
   if (body.when) {
     const w = new Date(body.when);
     if (!isNaN(w) && w > new Date()) {
@@ -54,6 +55,22 @@ exports.handler = async (event) => {
 
     const total = j.duration;
     const t0 = j.startDateTime;
+
+    /* journey mode: "how long to get to Battersea?" deserves the real answer,
+       not a list of places. Same TfL call, the plain reading of it: minutes,
+       and the legs in words a person would say. */
+    if (body.journey) {
+      const legs = (j.legs || []).map(l => {
+        const mode = l.mode && l.mode.id;
+        const line = (l.routeOptions && l.routeOptions[0] && l.routeOptions[0].name) || null;
+        const to = ((l.arrivalPoint || {}).commonName || '')
+          .replace(/ Rail Station| Underground Station| Station| \(London\)/g, '').trim();
+        if (mode === 'walking') return l.duration >= 5 ? 'walk ' + l.duration + ' min' : null;
+        return (line ? line : mode) + (to ? ' to ' + to : '');
+      }).filter(Boolean);
+      return { statusCode: 200, headers, body: JSON.stringify({
+        mins: total, departs: t0, legs: legs.slice(0, 5) }) };
+    }
 
     /* every interchange along the route is a candidate meeting point.
        Real timestamps (not summed leg durations) so waits count. */

@@ -87,7 +87,12 @@ export default async (req) => {
       let venues = {};
       try { const v = await store.get('evvenues-v1', { type: 'json' });
         if (v && typeof v === 'object') venues = v; } catch (e) {}
-      return J({ events, count: events.length, srcs, refreshedAt: newest || null, venues });
+      /* the personal layer: which events are loved, which are already GOING
+         (tickets, guest list) — the difference between browsing and a plan */
+      let marks = {};
+      try { const v = await store.get('evmarks-v1', { type: 'json' });
+        if (v && typeof v === 'object') marks = v; } catch (e) {}
+      return J({ events, count: events.length, srcs, refreshedAt: newest || null, venues, marks });
     }
 
     /* the flyer: an event's own page carries a share-image and a blurb in its
@@ -152,6 +157,28 @@ export default async (req) => {
       });
       await store.setJSON(KEY, all.slice(-300));
       return J({ ok: true, added: fresh.length, count: all.length });
+    }
+
+    /* mark an event: fav (love it) and/or going ('tickets' | 'guestlist').
+       Clearing both clears the mark. */
+    if (action === 'mark') {
+      const id = String(body.id || '').slice(0, 80);
+      if (!id) return J({ error: 'bad_id' });
+      let marks = {};
+      try { const v = await store.get('evmarks-v1', { type: 'json' });
+        if (v && typeof v === 'object') marks = v; } catch (e) {}
+      const cur = marks[id] || {};
+      if ('fav' in body) cur.fav = !!body.fav;
+      if ('going' in body)
+        cur.going = body.going === 'guestlist' ? 'guestlist' : (body.going ? 'tickets' : null);
+      if (!cur.fav && !cur.going) delete marks[id];
+      else marks[id] = { fav: !!cur.fav, going: cur.going || null, at: Date.now() };
+      const ks = Object.keys(marks);
+      if (ks.length > 150)
+        ks.sort((a, b) => (marks[a].at || 0) - (marks[b].at || 0))
+          .slice(0, ks.length - 150).forEach(k => delete marks[k]);
+      await store.setJSON('evmarks-v1', marks);
+      return J({ ok: true, mark: marks[id] || null });
     }
 
     if (action === 'clear') {

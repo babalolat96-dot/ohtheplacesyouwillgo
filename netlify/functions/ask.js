@@ -171,6 +171,13 @@ to different answers ("somewhere fun" with no other signal, a place name that
 is also an area). Ask ONE short clarifying question, the way a person would,
 instead of guessing silently.`;
 
+const CHATRULES = `Not every message is a search. Use the plan tool ONLY when
+they are asking to FIND places or events. For anything else — a question you
+can answer in words, a remark, or something this app cannot do yet (bookings,
+weather, exact prices) — use the say tool: brief, honest, plain words, and
+say clearly when something is beyond you. Never turn a question into a list
+of places nobody asked for.`;
+
 const PICKRULES = `The user is LOOKING AT a list of options (supplied as JSON).
 If the follow-up is a question about those options — which to pick, how they
 compare, "the first one", "which is best for X" — answer with the pick tool:
@@ -388,11 +395,12 @@ exports.handler = async (event) => {
         max_tokens: 600,
         system: (prev
           ? SYSTEM + '\n\n' + MERGE + (options ? '\n\n' + PICKRULES : '') + '\n\n' + SAYRULES
-          : SYSTEM) + (focus ? '\n\n' + FOCUSRULES : ''),
-        tools: prev ? [SCHEMA, ...(options ? [PICK] : []), SAY] : [SCHEMA],
-        // in a follow-up the model chooses WHICH tool answers (plan / pick /
-        // just talking); a fresh ask is forced to produce a plan as before
-        tool_choice: prev ? { type: 'any' } : { type: 'tool', name: 'plan' },
+          : SYSTEM + '\n\n' + CHATRULES) + (focus ? '\n\n' + FOCUSRULES : ''),
+        // the model chooses how to answer: a plan when they want places, a
+        // pick when they're choosing among options, or just words — a real
+        // conversation is allowed to simply talk back
+        tools: prev ? [SCHEMA, ...(options ? [PICK] : []), SAY] : [SCHEMA, SAY],
+        tool_choice: { type: 'any' },
         messages: [{ role: 'user', content: (prev || focus || (conv && conv.length))
           ? (conv && conv.length
               ? 'Conversation so far:\n' + conv.map(t => (t.role === 'user' ? 'They said: ' : 'You showed: ') + t.text).join('\n') + '\n\n'
