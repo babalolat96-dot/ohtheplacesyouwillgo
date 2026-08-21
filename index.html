@@ -4593,9 +4593,9 @@ async function ask(text, fresh){
   pushTurn(text); // the ask joins the conversation before anything is worked out
 
   /* -------- "when is Supa D playing?" — the listings, by artist ---------- */
-  const gigQ=text.match(/when\s+(?:is|does|do)\s+(.{2,40}?)\s+(?:playing|play|perform\w*|on)\b/i)
+  const gigQ=text.match(/when\s+(?:is|does|do)\s+(.{2,40}?)\s+(?:play\w{0,4}|perform\w*|on)\b/i)
     || text.match(/\bany\s+(.{2,40}?)\s+(?:gigs?|shows?|dates?)\b/i)
-    || text.match(/\bis\s+(.{2,40}?)\s+playing\b/i);
+    || text.match(/\bis\s+(.{2,40}?)\s+play\w{0,4}\b/i);
   if(gigQ && !/\b(line|tube|music|song)\b/i.test(gigQ[1])){
     const who=gigQ[1].trim();
     pushBotSay('Checking the listings for '+who+'…');
@@ -5716,6 +5716,11 @@ function planView(r){
   if(window.innerWidth<=860 && cands && !r.theirs && !r.route){
     const arow=document.createElement('div'); arow.className='optrow anchorrow';
     cands.slice(0,7).forEach((c2,i)=>arow.appendChild(mkAnchorCard(c2, i===0)));
+    /* the hand's last card: deal me a completely different one */
+    const sw2=document.createElement('button');
+    sw2.className='optmore rswap'; sw2.type='button'; sw2.textContent='another hand';
+    sw2.onclick=e=>{ e.stopPropagation(); anotherAnchor(); };
+    arow.appendChild(sw2);
     wrap.appendChild(arow);
     trackOptrow(arow, cands.slice(0,7), c2=>c2.d.lat?[c2.d.lat,c2.d.lng]:null);
   } else {
@@ -7492,6 +7497,15 @@ let rz; window.addEventListener('resize',()=>{
 render();
 drawPrompts();
 homeView();
+/* say which deploy this is — once, when a refresh brings a new build */
+(function(){
+  const BUILT='1:22 pm, 21 Aug';
+  try{
+    const seen=localStorage.getItem('otp:v1:build');
+    if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
+    localStorage.setItem('otp:v1:build', BUILT);
+  }catch(e){}
+})();
 locate(true);
 loadEvents();         // what's on — scouted weekly into the feed
 /* The roster must describe the bank AFTER the other stores have merged in.

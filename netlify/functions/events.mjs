@@ -237,7 +237,16 @@ export default async (req) => {
         const d = await r.json();
         if (d.error) return J({ error: 'skiddle_' + (d.errorcode || 'err'),
           detail: String(d.errormessage || '').slice(0, 120) });
-        const gigs = (d.results || []).map(ev => {
+        /* Skiddle's keyword match is FUZZY — it once offered Beetlejuice the
+           musical as a Supa D gig. The artist must actually be named in the
+           event's name, line-up or description, or it does not count. */
+        const nameRe = new RegExp('\\b' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          .replace(/\s+/g, '\\s+') + '\\b', 'i');
+        const gigs = (d.results || []).filter(ev =>
+          nameRe.test([ev.eventname, ev.description,
+            ...(Array.isArray(ev.artists) ? ev.artists.map(a => a && a.name || '') : [])
+          ].filter(Boolean).join(' '))
+        ).map(ev => {
           const date = ev.date || null;
           const open = (ev.openingtimes && ev.openingtimes.doorsopen) || null;
           const close = (ev.openingtimes && ev.openingtimes.doorsclose) || null;
