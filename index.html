@@ -1086,6 +1086,11 @@ body.detail-open .mobtab{display:none}
   padding:12px 16px; border-bottom:1px solid var(--line); cursor:pointer; display:flex; gap:11px;
 }
 .card:hover{background:var(--surface-2)}
+/* the face of a place: a small photo on the card's right edge. Absent photo,
+   absent element — the card never shows a broken frame. */
+.cthumb{width:58px; height:58px; flex:none; border-radius:12px; object-fit:cover;
+  align-self:center; background:var(--surface-2)}
+.rleg .cthumb{width:52px; height:52px; align-self:flex-start}
 .card[aria-current="true"]{background:var(--surface-2); box-shadow:inset 3px 0 0 var(--accent)}
 .pin{width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;margin-top:1px}
 .pin svg{width:15px;height:15px;fill:#fff}
@@ -3891,6 +3896,7 @@ function evCard(e, origin){
     (e.why?'<p class="snip">'+esc(e.why)+'</p>':'')+
     '<div class="tagrow">'+(e.genres||[]).slice(0,3).map(g=>'<span class="tag">'+esc(g)+'</span>').join('')+
     (e.src?'<span class="tag">via '+esc(e.src)+'</span>':'')+'</div></div>'+
+    (e.venue?thumbHtml(e.venue, e.area):'')+
     (e.url?'<a class="savebtn evgo" target="_blank" rel="noopener" href="'+esc(e.url)+'">Tickets</a>':'')+
     (planForming()?'<button class="addplan" type="button">+ plan</button>':'');
   const a=el.querySelector('.evgo'); if(a) a.onclick=ev=>ev.stopPropagation();
@@ -4246,7 +4252,8 @@ function sugCard(p){
     (p._claimBust?'<span class="tag bust">said late · Google says shuts '+p._claimBust+'</span>':'')+
     '<span class="tag">'+(p.via==='google'?'on Google':p.via==='register'?'address confirmed':p.via==='map'?'found on the map':'address only')+'</span>'+
     (p.rating?'<span class="tag">'+p.rating+'★'+(p.ratingCount?' ('+p.ratingCount+')':'')+'</span>':'')+
-    (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>';
+    (p.confident===false?'<span class="tag">unsure</span>':'')+'</div></div>'+
+    thumbHtml(p.name, p.area);
   const saved=inBank(p.name);
   const b=document.createElement('button');
   if(saved){
@@ -5752,7 +5759,7 @@ function planView(r){
           '<div class="tagrow">'+ob2+
             (d2.src==='mine'?'<span class="tag mine">yours</span>':'')+
             (isCur?'<span class="tag">the pick</span>':'')+
-          '</div></div></div>'+
+          '</div></div>'+thumbHtml(d2.n, d2.hood||d2.area)+'</div>'+
       '<div class="acardrow">'+
         (isCur?'':'<button class="mkstart" type="button">make it the start</button>')+
         (planForming()?'<button class="addplan" type="button">+ plan</button>':'')+
@@ -6069,6 +6076,15 @@ function renderPlan(){
   if(again) listEl.scrollTop=keep;
 }
 
+/* the face of a place: one cached Google photo, by name. The server banks the
+   bytes on first ask, so the whole library grows photos as it gets browsed.
+   No photo found = the img quietly removes itself; the card stands as before. */
+function thumbHtml(name, area){
+  if(!name) return '';
+  return '<img class="cthumb" loading="lazy" alt="" src="/api/thumb?n='+
+    encodeURIComponent(name)+(area?'&a='+encodeURIComponent(area):'')+
+    '" onerror="this.remove()">';
+}
 function card(d){
   const el=document.createElement('div');
   el.className='card'; el.tabIndex=0; el.setAttribute('role','button');
@@ -6097,6 +6113,7 @@ function card(d){
       (blurb?'<p class="snip">'+esc(blurb)+'</p>':'')+
       (tags.length?'<div class="tagrow">'+tags.join('')+'</div>':'')+
     '</div>'+
+    thumbHtml(d.n, d.hood||d.area)+
     (planForming()?'<button class="addplan" type="button" title="Add to the plan">+ plan</button>':'');
   const apb=el.querySelector('.addplan');
   if(apb) apb.onclick=ev=>{ ev.stopPropagation(); addStopToPlan(d); };
@@ -7035,6 +7052,9 @@ function fitToResults(){
   map.fitBounds(b,{padding:[40,40], maxZoom:15});
 }
 document.getElementById('reset').onclick=()=>{
+  /* Reset means EVERYTHING back to the start — including a conversation in
+     progress. Without this, the chat guard makes Reset look dead mid-chat. */
+  if(chatlog.childNodes.length || ACTIVEPLAN) freshChat();
   S.q='';q.value='';sw.classList.remove('has');
   S.vibes.clear();S.cats.clear();S.regs.clear();
   S.bands.clear();S.cuis.clear();S.srcs.clear();S.matchAll=false;
@@ -7328,12 +7348,35 @@ layout();
     if(tb.hidden) return;
     tb.innerHTML='<span class="msub">Fetching your plans…</span>';
     const plans=await loadPlans();
-    if(!plans.length){
+    /* saying "I'm going" MEANS something: commitments lead the plans drawer.
+       Every event marked going (tickets or guest list) stands here, soonest
+       first, until the night itself is over. */
+    if(!EVENTS.length) await loadEvents();
+    const going=EVENTS.filter(e=>EVMARKS[e.id] && EVMARKS[e.id].going && e.start)
+      .sort((a,b)=>Date.parse(a.start)-Date.parse(b.start));
+    tb.innerHTML='';
+    if(going.length){
+      tb.insertAdjacentHTML('beforeend','<div class="libnote"><b>You’re going</b> — '+
+        going.length+' committed night'+(going.length===1?'':'s')+'</div>');
+      going.slice(0,8).forEach(e=>{
+        const b=document.createElement('button'); b.className='librow'; b.type='button';
+        const d3=new Date(e.start);
+        b.innerHTML='<span><b>🎟 '+esc(e.title)+'</b></span><span class="sub2">'+
+          esc(d3.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'}))+
+          (e.venue?' · '+esc(e.venue):'')+
+          (EVMARKS[e.id].going==='guestlist'?' · guest list':' · tickets')+'</span>';
+        b.onclick=()=>{ mw.hidden=true; openEventDetail(e); };
+        tb.appendChild(b);
+      });
+    }
+    if(!plans.length && !going.length){
       tb.innerHTML='No plans kept yet. Build a night in the chat and press '+
-        '“keep as plan”, or open an event and “Plan around it”.';
+        '“keep as plan”, or open an event and “Plan around it” — and events '+
+        'you mark “going” will stand here as commitments.';
       return;
     }
-    tb.innerHTML='';
+    if(going.length && plans.length)
+      tb.insertAdjacentHTML('beforeend','<div class="libnote" style="margin-top:4px"><b>Kept plans</b></div>');
     plans.forEach(pl2=>{
       const b=document.createElement('button'); b.className='librow'; b.type='button';
       b.innerHTML='<span><b>'+esc(pl2.title)+'</b></span><span class="sub2">'+
@@ -7575,7 +7618,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='3:00 pm, 21 Aug';
+  const BUILT='4:00 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
