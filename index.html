@@ -4601,12 +4601,11 @@ async function ask(text, fresh){
     pushBotSay('Checking the listings for '+who+'…');
     const j=await authPost('/api/events',{action:'djgigs', name:who});
     if(j && j.ok && (j.gigs||[]).length){
-      const fmtG=g=>{ const d2=new Date(g.start);
-        return g.title.slice(0,44)+' — '+(g.venue||g.area||'venue tbc')+', '+
-          d2.toLocaleDateString('en-GB',{weekday:'short', day:'numeric', month:'short'})+
-          ' '+String(d2.getHours()).padStart(2,'0')+':'+String(d2.getMinutes()).padStart(2,'0'); };
-      pushBotSay(who+' in the listings: '+j.gigs.slice(0,4).map(fmtG).join('  ·  ')+
-        (j.gigs.length>4?'  ·  and '+(j.gigs.length-4)+' more.':'.')+' (Skiddle’s live listings, London 30 miles.)');
+      pushBotSay(who+' in the listings — '+j.gigs.length+' night'+(j.gigs.length===1?'':'s')+
+        ', swipe through. (Skiddle’s live board, London 30 miles.)');
+      pushBotCards(j.gigs.map(g=>({id:g.id, title:g.title, artists:[who],
+        venue:g.venue, area:g.area, lat:g.lat, lng:g.lng,
+        start:g.start, end:g.end, url:g.url, src:'skiddle', genres:[], why:null})));
       pushBotChoice('Want these in your events feed?',
         [{label:'Add them', fn:async()=>{
             const evs=j.gigs.map(g=>({title:g.title, artists:[who], venue:g.venue, area:g.area,
@@ -5325,6 +5324,17 @@ function pushBotChoice(said, opts){
     rowb.appendChild(b);
   });
   chatlog.appendChild(rowb);
+  requestAnimationFrame(()=>{ listEl.scrollTop=listEl.scrollHeight; });
+}
+/* the bot can answer WITH a hand of event cards — same cards, same swipe,
+   same tap-for-detail as everywhere else, pins on the map behind */
+function pushBotCards(evs){
+  const row=document.createElement('div'); row.className='optrow';
+  row.style.cssText='padding:0 14px 8px';
+  evs.slice(0,8).forEach(e2=>row.appendChild(evCard(e2, null)));
+  chatlog.appendChild(row);
+  trackOptrow(row, evs.slice(0,8), e2=>{ const pl=evPlace(e2); return pl?[pl.lat,pl.lng]:null; });
+  drawEventMarkers(evs);
   requestAnimationFrame(()=>{ listEl.scrollTop=listEl.scrollHeight; });
 }
 function offerKeepPlan(){
@@ -7499,7 +7509,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='1:22 pm, 21 Aug';
+  const BUILT='1:39 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
