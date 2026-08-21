@@ -235,9 +235,13 @@ export default async (req) => {
       const k = (process.env.SKIDDLE_API_KEY || '').trim();
       if (!k) return J({ error: 'no_skiddle_key' });
       try {
-        const qs = new URLSearchParams({ api_key: k, keyword: name,
-          latitude: '51.5074', longitude: '-0.1278', radius: '30',
-          order: 'date', description: '1' });
+        /* the first ask stays local (London, 30 miles); a follow-up like
+           "when is his NEXT gig" casts the whole UK board instead */
+        const qs = new URLSearchParams(body.wide
+          ? { api_key: k, keyword: name, order: 'date', description: '1' }
+          : { api_key: k, keyword: name,
+              latitude: '51.5074', longitude: '-0.1278', radius: '30',
+              order: 'date', description: '1' });
         const r = await fetch('https://www.skiddle.com/api/v1/events/search/?' + qs,
           { signal: AbortSignal.timeout(8000) });
         const d = await r.json();

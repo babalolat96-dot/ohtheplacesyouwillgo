@@ -4579,6 +4579,44 @@ function localRefine(prev, prevResult, text){
   return merged;
 }
 
+/* the artist ask, in one place: first pass looks near London, the follow-up
+   ("when is HIS next gig") casts the whole UK. The chat remembers who via
+   S.lastDJ so pronouns keep meaning something. */
+async function askGigs(who, wide){
+  S.lastDJ=who;
+  pushBotSay(wide?('Casting wider for '+who+' — the whole UK board…')
+                 :('Checking the listings for '+who+'…'));
+  const j=await authPost('/api/events',{action:'djgigs', name:who, wide:!!wide});
+  if(j && j.ok && (j.gigs||[]).length){
+    pushBotSay(who+' in the listings — '+j.gigs.length+' night'+(j.gigs.length===1?'':'s')+
+      ', swipe through. (Skiddle’s live board, '+(wide?'UK-wide':'London 30 miles')+'.)');
+    pushBotCards(j.gigs.map(g=>({id:g.id, title:g.title, artists:[who],
+      venue:g.venue, area:g.area, lat:g.lat, lng:g.lng,
+      start:g.start, end:g.end, url:g.url, src:'skiddle', genres:[], why:null})));
+    pushBotChoice('Want these in your events feed?',
+      [{label:'Add them', fn:async()=>{
+          const evs=j.gigs.map(g=>({title:g.title, artists:[who], venue:g.venue, area:g.area,
+            lat:g.lat, lng:g.lng, start:g.start, end:g.end, url:g.url,
+            src:'skiddle', genres:[], why:'You asked after '+who}));
+          const f2=await authPost('/api/events',{action:'add', events:evs});
+          pushBotSay(f2&&f2.ok?'In the feed — '+f2.added+' added.':'Couldn’t add them'+(f2&&f2.error?' ('+f2.error+')':'')+'.');
+          loadEvents();
+        }},
+       {label:'No need', fn:()=>{}}]);
+  } else if(j && j.error==='no_skiddle_key'){
+    pushBotSay('I can search artist listings the moment the free Skiddle key is added — '+
+      'skiddle.com/api, one signup, then SKIDDLE_API_KEY in Netlify. Until then I can only follow their pages weekly.');
+  } else if(j && j.ok && wide){
+    pushBotSay('Nothing on Skiddle’s board for '+who+' anywhere in the UK yet. '+
+      'If I’m following their page, the Thursday scout will catch new dates the moment they land — otherwise + → “Follow a DJ” and I’ll watch for you.');
+  } else if(j && j.ok){
+    pushBotChoice('Nothing listed for '+who+' within 30 miles of London right now — Skiddle’s board, checked live.',
+      [{label:'Check the whole UK', fn:()=>askGigs(who, true)}]);
+  } else {
+    pushBotSay('Couldn’t check the listings just now'+(j&&j.error?' ('+j.error+')':'')+'.');
+  }
+}
+
 async function ask(text, fresh){
   closeDrop();
   q.value=''; S.q=''; sw.classList.remove('has'); sw.classList.remove('ask');
@@ -4598,33 +4636,16 @@ async function ask(text, fresh){
     || text.match(/\bany\s+(.{2,40}?)\s+(?:gigs?|shows?|dates?)\b/i)
     || text.match(/\bis\s+(.{2,40}?)\s+play\w{0,4}\b/i);
   if(gigQ && !/\b(line|tube|music|song)\b/i.test(gigQ[1])){
-    const who=gigQ[1].trim();
-    pushBotSay('Checking the listings for '+who+'…');
-    const j=await authPost('/api/events',{action:'djgigs', name:who});
-    if(j && j.ok && (j.gigs||[]).length){
-      pushBotSay(who+' in the listings — '+j.gigs.length+' night'+(j.gigs.length===1?'':'s')+
-        ', swipe through. (Skiddle’s live board, London 30 miles.)');
-      pushBotCards(j.gigs.map(g=>({id:g.id, title:g.title, artists:[who],
-        venue:g.venue, area:g.area, lat:g.lat, lng:g.lng,
-        start:g.start, end:g.end, url:g.url, src:'skiddle', genres:[], why:null})));
-      pushBotChoice('Want these in your events feed?',
-        [{label:'Add them', fn:async()=>{
-            const evs=j.gigs.map(g=>({title:g.title, artists:[who], venue:g.venue, area:g.area,
-              lat:g.lat, lng:g.lng, start:g.start, end:g.end, url:g.url,
-              src:'skiddle', genres:[], why:'You asked after '+who}));
-            const f2=await authPost('/api/events',{action:'add', events:evs});
-            pushBotSay(f2&&f2.ok?'In the feed — '+f2.added+' added.':'Couldn’t add them'+(f2&&f2.error?' ('+f2.error+')':'')+'.');
-            loadEvents();
-          }},
-         {label:'No need', fn:()=>{}}]);
-    } else if(j && j.error==='no_skiddle_key'){
-      pushBotSay('I can search artist listings the moment the free Skiddle key is added — '+
-        'skiddle.com/api, one signup, then SKIDDLE_API_KEY in Netlify. Until then I can only follow their pages weekly.');
-    } else if(j && j.ok){
-      pushBotSay('Nothing listed for '+who+' within 30 miles of London right now — Skiddle’s board, checked live.');
-    } else {
-      pushBotSay('Couldn’t check the listings just now'+(j&&j.error?' ('+j.error+')':'')+'.');
-    }
+    await askGigs(gigQ[1].trim(), false);
+    return;
+  }
+  /* the follow-up KNOWS who "he" is: "not right now, but when is his next
+     gig" re-asks about the same artist and casts the whole UK board */
+  if(S.lastDJ && (
+      /\b(his|her|their)\s+next\s+(gig|show|date|event|set)s?\b/i.test(text) ||
+      /\bwhen\s+(?:is|are|does|do)\s+(?:he|she|they)\s+(?:play\w{0,4}|perform\w*|on|next)\b/i.test(text) ||
+      /\bnext\s+gig\b/i.test(text))){
+    await askGigs(S.lastDJ, true);
     return;
   }
 
@@ -5172,7 +5193,7 @@ function trackOptrow(row, items, at){
 /* one gesture, one meaning: throwing the sheet away IS starting fresh */
 function freshChat(){
   saveChatSession();   // a discarded thread is still a memory, not a loss
-  S.browse=false; clearPlan(); clearChat();
+  S.browse=false; S.lastDJ=null; clearPlan(); clearChat();
   ACTIVEPLAN=null;
   if(planLayer){ try{map.removeLayer(planLayer);}catch(e){} planLayer=null; }
   q.value=''; S.q=''; sw.classList.remove('has'); qGrow();
@@ -7554,7 +7575,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='2:38 pm, 21 Aug';
+  const BUILT='3:00 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
