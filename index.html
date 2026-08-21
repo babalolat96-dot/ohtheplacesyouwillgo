@@ -750,11 +750,15 @@ a{color:var(--accent)}
 .iconbtn:hover{border-color:var(--ink-3)}
 
 .search{position:relative; margin-top:12px; z-index:9}
-.search input{
+.search input, .search textarea{
   width:100%; padding:10px 34px 10px 34px; border-radius:10px;
   border:1px solid var(--line); background:var(--surface-2); color:var(--ink); font:inherit;
 }
-.search input:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
+/* the ask is a textarea so every word you type stays visible — it grows with
+   you (capped), never a single scrolling line */
+.search textarea{resize:none; overflow-y:auto; max-height:112px; line-height:1.4;
+  display:block; -webkit-appearance:none}
+.search input:focus, .search textarea:focus{outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent}
 .search svg{position:absolute; left:10px; top:11px; opacity:.5}
 .search .clr{position:absolute; right:6px; top:6px; width:26px;height:26px;border:0;background:none;
   border-radius:6px;cursor:pointer;color:var(--ink-3);display:none}
@@ -766,7 +770,16 @@ a{color:var(--accent)}
   display:none; place-items:center;
 }
 .search.ask .send{display:grid}
-.search input{padding-right:44px}
+/* the mic owns the corner while the box is empty; typing hands it to send */
+.search .mic{
+  position:absolute; right:6px; top:5px; width:30px; height:30px; border:0; padding:0;
+  border-radius:8px; background:var(--surface-2); color:var(--ink-2); cursor:pointer;
+  display:grid; place-items:center;
+}
+.search.has .mic, .search.ask .mic{display:none}
+.search .mic.rec{background:#d6452a; color:#fff; animation:micpulse 1.2s ease-in-out infinite}
+@keyframes micpulse{0%,100%{box-shadow:0 0 0 0 rgba(214,69,42,.45)}50%{box-shadow:0 0 0 7px rgba(214,69,42,0)}}
+.search input, .search textarea{padding-right:44px}
 .prompts{display:flex; gap:6px; margin-top:9px; overflow-x:auto; scrollbar-width:none;
   padding-bottom:2px; touch-action:pan-x}
 .prompts::-webkit-scrollbar{display:none}
@@ -1157,6 +1170,9 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   white-space:nowrap; transform:translate(-50%,-50%); text-align:center;
   text-shadow:0 0 3px var(--land),0 0 3px var(--land),0 0 6px var(--land);
 }
+/* the painted patch's name — quiet caps in the accent, sitting on the area */
+.arealabel{color:var(--accent); font-size:11px; font-weight:700;
+  letter-spacing:.09em; text-transform:uppercase; opacity:.85}
 .me{width:16px;height:16px;border-radius:50%;background:var(--accent);
   border:3px solid var(--surface); box-shadow:0 0 0 1px var(--ring),0 2px 8px rgba(0,0,0,.3)}
 .legend{
@@ -1182,7 +1198,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
      gestures), and every input is 16px so iOS Safari has no reason to zoom
      in on focus. This is what keeps the map zoom feeling steady. */
   body{touch-action:manipulation; -webkit-text-size-adjust:100%}
-  .search input, .combo input, .combo select, .instabox input[type=url],
+  .search input, .search textarea, .combo input, .combo select, .instabox input[type=url],
   .instabox input[type=file], .passbox input{font-size:16px}
   .app{display:block; height:100dvh; min-height:100dvh}
   .panel{height:auto; overflow:visible; border-right:0; display:block}
@@ -1207,24 +1223,29 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
     background:linear-gradient(to top, var(--plane) 58%, transparent)}
   .composer{
     position:fixed; left:10px; right:10px; bottom:calc(10px + env(safe-area-inset-bottom));
-    z-index:44; display:flex; align-items:center; gap:7px;
+    /* everything sits on ONE baseline however tall the box grows — the +, the
+       orb, the text and the mic read as a single line, never a scatter */
+    z-index:44; display:flex; align-items:flex-end; gap:7px;
     /* a rounded rect, not a capsule: with the suggestion line wrapped inside,
        a 999px radius turned the whole thing into an odd oval */
     background:var(--surface); border:1px solid var(--line); border-radius:22px;
     padding:8px 10px 9px; box-shadow:0 10px 34px rgba(0,0,0,.3);
     transform:translateY(var(--kb, 0px)); transition:transform .18s ease-out;
   }
-  .cbtn{flex:none; width:34px; height:34px; border-radius:50%; border:0;
+  .cbtn{flex:none; width:34px; height:34px; border-radius:50%; border:0; margin-bottom:1px;
     background:var(--surface-2); color:var(--ink-2); display:grid; place-items:center; cursor:pointer}
-  .orb{flex:none; width:23px; height:23px; border-radius:50%;
+  .orb{flex:none; width:23px; height:23px; border-radius:50%; margin-bottom:7px;
     background:conic-gradient(from 0deg,#2a78d6,#8b5cd6,#d65ca8,#35b98a,#2a78d6);
     animation:orbspin 7s linear infinite}
   body.thinking .orb{animation-duration:1s; box-shadow:0 0 16px rgba(139,92,214,.6)}
   #cslot{flex:1; min-width:0}
   .composer .search{margin:0}
   .composer .search>svg{display:none}
-  .composer .search input{border:0; background:none; padding:8px 58px 8px 2px}
-  .composer .search input:focus{outline:none; border-color:transparent}
+  .composer .search input, .composer .search textarea{border:0; background:none; padding:8px 58px 8px 2px}
+  .composer .search input:focus, .composer .search textarea:focus{outline:none; border-color:transparent}
+  .composer .search textarea{max-height:96px}
+  /* the send button holds the bottom corner however tall the box grows */
+  .composer .search .send, .composer .search .clr, .composer .search .mic{top:auto; bottom:5px}
   .composer .cbdrop{top:auto; bottom:calc(100% + 12px); max-height:46dvh; border-radius:16px}
   .prompts{
     position:fixed; left:10px; right:10px; bottom:calc(78px + env(safe-area-inset-bottom));
@@ -1260,9 +1281,40 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .planbar::before{content:''; width:17px; height:17px; border-radius:50%; flex:none; margin-top:2px;
     background:conic-gradient(from 0deg,#2a78d6,#8b5cd6,#d65ca8,#35b98a,#2a78d6)}
   .menuwrap{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.45)}
-  .menu{position:absolute; left:0; right:0; bottom:0; background:var(--surface);
-    border-radius:20px 20px 0 0; padding:16px 16px calc(20px + env(safe-area-inset-bottom));
-    max-height:82dvh; overflow-y:auto; box-shadow:0 -10px 34px rgba(0,0,0,.3)}
+  /* the menu is a side drawer — it comes from where the button is */
+  .menu{position:absolute; left:0; top:0; bottom:0; width:min(82vw, 330px);
+    background:var(--surface); border-radius:0 18px 18px 0;
+    padding:calc(16px + env(safe-area-inset-top)) 16px calc(20px + env(safe-area-inset-bottom));
+    overflow-y:auto; box-shadow:10px 0 34px rgba(0,0,0,.3);
+    animation:drawerin .22s ease-out}
+  @keyframes drawerin{from{transform:translateX(-100%)}to{transform:none}}
+  /* the add sheet keeps the bottom: it answers the + button beside the chat */
+  .addwrap{position:fixed; inset:0; z-index:60; background:rgba(0,0,0,.45)}
+  .addwrap .addbox{position:absolute; left:0; right:0; bottom:0; background:var(--surface);
+    border-radius:20px 20px 0 0; padding:8px 16px calc(20px + env(safe-area-inset-bottom));
+    box-shadow:0 -10px 34px rgba(0,0,0,.3); transition:transform .2s ease-out;
+    touch-action:pan-y}
+  .addwrap .addbox .grab{display:block; padding:4px 0 8px; cursor:grab}
+  .addwrap .addbox .grab i{display:block; width:40px; height:4px; border-radius:99px;
+    background:var(--line); margin:0 auto}
+  /* the drawer's drop-downs: library and events unfold IN PLACE — peeking at
+     either never costs the conversation in the chat */
+  .libbox{margin:2px 0 6px; border:1px solid var(--line); border-radius:12px;
+    background:var(--surface-2); max-height:44dvh; overflow-y:auto; padding:6px}
+  .libbox input{width:100%; box-sizing:border-box; padding:9px 11px; font-size:16px;
+    border:1px solid var(--line); border-radius:9px; background:var(--surface); color:var(--ink)}
+  .librow{display:flex; width:100%; align-items:baseline; gap:8px; border:0; background:none;
+    padding:9px 7px; border-radius:8px; cursor:pointer; text-align:left; font-size:13.5px; color:var(--ink)}
+  .librow:active{background:var(--surface)}
+  .librow .sub2{margin-left:auto; font-size:11.5px; color:var(--ink-3); white-space:nowrap}
+  .libnote{padding:8px 7px; font-size:11.5px; color:var(--ink-3)}
+  .srcbox{margin:6px 0 2px}
+  .srcbox input{width:100%; box-sizing:border-box; padding:11px 12px; font-size:16px;
+    border:1px solid var(--line); border-radius:10px; background:var(--surface-2); color:var(--ink)}
+  .srcbox input+input{margin-top:8px}
+  .srcbox .btn{margin-top:8px; width:100%; justify-content:center}
+  #djhits .mbrowse{font-size:13px; line-height:1.4}
+  #djhits .mbrowse .msub{margin-top:1px}
   .mhead{margin-bottom:12px}
   .mhead b{font-size:15px}
   .msub{display:block; font-size:11.5px; color:var(--ink-3); margin-top:2px}
@@ -1343,6 +1395,41 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
   .hd,.filters,.list,.bar{min-width:0}
 }
 .mapwrap{position:relative; height:100%}
+
+/* ================= the conversation =================
+   The answer is a chat, not a list. Past turns freeze into bubbles at the top
+   of the scroller; the current answer renders live underneath into #latest.
+   The same DOM works in the phone sheet and the desktop panel. */
+.chatlog{display:flex; flex-direction:column; gap:10px; padding:12px 14px 4px}
+.chatlog:empty{display:none}
+.msg{max-width:88%; font-size:14px; line-height:1.5}
+.msg.user{align-self:flex-end; background:var(--chip-on); color:var(--chip-on-ink);
+  padding:9px 13px; border-radius:16px 16px 4px 16px; white-space:pre-wrap;
+  overflow-wrap:break-word}
+.msg.user img.snap{display:block; max-width:200px; max-height:240px;
+  border-radius:11px; margin:0 0 2px}
+.msg.bot{align-self:flex-start; max-width:88%; color:var(--ink-2)}
+.saybar{padding:10px 13px; background:var(--surface-2); border:1px solid var(--line);
+  border-radius:16px 16px 16px 4px; color:var(--ink); font-size:14px}
+/* the options: a carousel inside the answer, each card a choice you can tap */
+/* pan-x AND pan-y: the finger often lands on a card, and a vertical swipe
+   there must still scroll the chat — the browser picks the axis by gesture */
+.optrow{display:flex; gap:10px; overflow-x:auto; padding:8px 14px 12px;
+  scroll-snap-type:x proximity; scrollbar-width:none; touch-action:pan-x pan-y;
+  overscroll-behavior-x:contain}
+.optrow::-webkit-scrollbar{display:none}
+.optrow .card, .optrow .sug, .optrow .ev{
+  flex:0 0 min(320px, 82%); scroll-snap-align:start; margin:0;
+  border:1px solid var(--line) !important; border-radius:14px;
+  background:var(--surface-2); align-self:stretch}
+.optmore{flex:0 0 auto; align-self:center; border:1px solid var(--line);
+  background:var(--chip); color:var(--ink-2); border-radius:999px;
+  padding:8px 14px; font-size:12.5px; cursor:pointer; white-space:nowrap}
+/* an event pin placed by its area, not an address: present, but humbler */
+.mk.approx{opacity:.62}
+/* trips: the baseline — a place for plans to live once you keep one */
+.tripbox{margin:6px 0 4px; padding:12px 13px; border:1px dashed var(--line);
+  border-radius:12px; color:var(--ink-3); font-size:13px; line-height:1.5}
 </style>
 </head>
 <body>
@@ -1352,7 +1439,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
       <div class="hd-top">
         <div style="flex:1">
           <h1 class="title">Oh the places you will go</h1>
-          <p class="sub"><span id="bankcount">501</span> London spots · <a href="https://sowhatsthesitch.substack.com" target="_blank" rel="noopener">so what's the sitch</a> + Olaloye's list</p>
+          <p class="sub"><span id="bankcount">501</span> London spots</p>
         </div>
         <button class="iconbtn" id="addinsta" title="Add places from an Instagram post" aria-label="Add places from an Instagram post">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c2.7 0 3 0 4.1.06a5.9 5.9 0 0 1 5.84 5.84C22 9 22 9.3 22 12s0 3-.06 4.1a5.9 5.9 0 0 1-5.84 5.84C15 22 14.7 22 12 22s-3 0-4.1-.06a5.9 5.9 0 0 1-5.84-5.84C2 15 2 14.7 2 12s0-3 .06-4.1A5.9 5.9 0 0 1 7.9 2.06C9 2 9.3 2 12 2zm0 4.8a5.2 5.2 0 1 0 0 10.4 5.2 5.2 0 0 0 0-10.4zm0 2a3.2 3.2 0 1 1 0 6.4 3.2 3.2 0 0 1 0-6.4zm5.4-3.3a1.2 1.2 0 1 0 0 2.4 1.2 1.2 0 0 0 0-2.4z"/></svg>
@@ -1363,10 +1450,13 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
       </div>
       <div class="search" id="searchwrap">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
-        <input id="q" type="search" placeholder="Ask me where to go…" autocomplete="off">
+        <textarea id="q" rows="1" placeholder="Ask me where to go…" autocomplete="off" enterkeyhint="send"></textarea>
         <button class="clr" id="clrq" aria-label="Clear search">✕</button>
         <button class="send" id="sendq" aria-label="Ask">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </button>
+        <button class="mic" id="micbtn" aria-label="Speak your ask">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
         </button>
         <div class="cbdrop" id="qdrop"></div>
       </div>
@@ -1431,20 +1521,59 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
     </button>
     <div class="botmask" aria-hidden="true"></div>
     <div class="composer" id="composer">
-      <button class="cbtn" id="newchat" title="Start a new search" aria-label="Start a new search">
+      <button class="cbtn" id="addbtn" title="Add to your bank" aria-label="Add to your bank">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
       </button>
       <span class="orb" id="orb" aria-hidden="true"></span>
       <div id="cslot"></div>
     </div>
+    <div class="addwrap" id="addwrap" hidden>
+      <div class="addbox">
+        <div class="grab" aria-hidden="true"><i></i></div>
+        <div class="mhead"><b>Add to your bank</b></div>
+        <button class="mbrowse" id="addig2" type="button">Places from an Instagram post</button>
+        <button class="mbrowse" id="addsrcbtn" type="button">Teach a weekly events source</button>
+        <div class="srcbox" id="srcbox" hidden>
+          <input type="url" id="srcurl" placeholder="https:// — the promoter or listings page" autocomplete="off">
+          <button class="btn pri" id="srcgo" type="button">Teach it</button>
+          <p class="msub">The Thursday scout will read this page every week from now on and pull its events into your feed.</p>
+        </div>
+        <button class="mbrowse" id="adddjbtn" type="button">Follow a DJ</button>
+        <div class="srcbox" id="djbox" hidden>
+          <input type="text" id="djname" placeholder="DJ name — e.g. Supa D" autocomplete="off">
+          <input type="url" id="djurl" placeholder="their page, if you have it (optional)" autocomplete="off">
+          <button class="btn pri" id="djgo" type="button">Find them</button>
+          <div id="djhits"></div>
+          <p class="msub">It knocks on the usual doors — SoundCloud, Linktree, or any page you paste —
+            and shows what it actually found. You confirm it&rsquo;s the right one; the scout then reads
+            their page weekly. (RA blocks robots, so RA links won&rsquo;t work here.)</p>
+        </div>
+        <button class="mbrowse" id="addphoto" type="button">Attach a photo — a flyer, a place, a screenshot</button>
+        <input type="file" id="photoin" accept="image/*" hidden>
+        <!-- fresh chat is a GESTURE (throw the sheet down); this hook keeps the
+             programmatic path for tests and keyboards -->
+        <button id="newchat" type="button" hidden aria-hidden="true"></button>
+      </div>
+    </div>
     <div class="menuwrap" id="menuwrap" hidden>
       <div class="menu">
         <div class="mhead"><b>Oh the places you will go</b>
-          <span class="msub"><span id="mcount"></span> London spots · <a href="https://sowhatsthesitch.substack.com" target="_blank" rel="noopener">so what's the sitch</a> + Olaloye's list</span></div>
+          <span class="msub"><span id="mcount"></span> London spots</span></div>
         <p class="msub" id="lampprog" hidden></p>
-        <button class="mbrowse" id="browseall" type="button">Browse all places A–Z</button>
+        <button class="mbrowse" id="browseall" type="button">Library — every place, A–Z</button>
+        <div class="libbox" id="libbox" hidden>
+          <input type="search" id="libfind" placeholder="Type to find a place…" autocomplete="off">
+          <div id="liblist"></div>
+        </div>
+        <button class="mbrowse" id="menuevents" type="button">Events — what&rsquo;s on</button>
+        <div class="libbox" id="evbox" hidden></div>
+        <button class="mbrowse" id="menutrips" type="button">Plans</button>
+        <div class="tripbox" id="tripbox" hidden>Plans is on its way. When a night
+          comes together in the chat, you&rsquo;ll keep it here — the places, the order,
+          the timings — and pick it back up when the day comes.</div>
+        <button class="mbrowse" id="menufilters" type="button" aria-expanded="false">Filters</button>
         <div id="mslot1"></div>
-        <div id="mslot2"></div>
+        <div id="mslot2" hidden></div>
         <div class="mrow" id="mactions"><span class="msub" style="align-self:center">Add from Instagram · theme</span></div>
       </div>
     </div>
@@ -1684,6 +1813,14 @@ const cluster = L.markerClusterGroup({
   }
 });
 map.addLayer(cluster);
+/* markercluster: a zoom animation can outlive a plan re-render that cleared
+   the layer, and the library's own zoom-end bookkeeping then asks
+   hasLayer(undefined) — an uncaught error from deep inside it. hasLayer of
+   nothing is simply false, so answer that at the source. */
+[L.Map, L.LayerGroup].forEach(K=>{
+  const orig=K.prototype.hasLayer;
+  K.prototype.hasLayer=function(l){ return l ? orig.call(this, l) : false; };
+});
 
 const markers = new Map();
 PINNED.forEach(d=>{
@@ -1821,7 +1958,13 @@ function focusOrigin(n){
 function planActive(){ return !!(S.plan && (S.plan.type==='anchor'||S.plan.type==='rows')); }
 /* one word is always enough: send works out what you meant */
 function askable(){ return q.value.trim().length>=2; }
+/* the box grows with the thought — every word stays visible */
+function qGrow(){
+  q.style.height='auto';
+  q.style.height=Math.min(q.scrollHeight, window.innerWidth<=860?96:112)+'px';
+}
 q.oninput=()=>{
+  qGrow();
   S.q=q.value.trim().toLowerCase();
   sw.classList.toggle('has',!!q.value);
   sw.classList.toggle('ask', askable());
@@ -1834,6 +1977,7 @@ q.onfocus=()=>{ if(q.value.trim()) q.select(); buildSuggestions(); };
 q.onblur=()=>setTimeout(closeDrop,140);
 q.onkeydown=e=>{
   if(e.key==='Escape'){ closeDrop(); q.blur(); return; }
+  if(e.key==='Enter' && e.shiftKey) return;   // shift-enter = a new line, not a send
   if(!suggestions.length){ if(e.key==='Enter' && askable()){ e.preventDefault(); ask(q.value.trim()); } return; }
   const bs=[...qdrop.querySelectorAll('button')];
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){
@@ -1851,6 +1995,47 @@ document.getElementById('clrq').onclick=()=>{
   closeDrop();S.plan=null;render();drawPrompts();q.focus();
 };
 document.getElementById('sendq').onclick=()=>{ if(askable()) ask(q.value.trim()); };
+
+/* ---------------- speak the ask ----------------
+   The browser's own speech recognition: words land in the box as you talk,
+   and a natural stop sends them. No key, no cost. Browsers without it are
+   told so honestly — the keyboard's own mic always remains. */
+(function(){
+  const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  const mb=document.getElementById('micbtn');
+  if(!mb) return;
+  if(!SR){
+    mb.onclick=()=>toast('Voice isn’t available in this browser — the keyboard’s own mic still works.');
+    return;
+  }
+  let rec=null, listening=false, heard='';
+  mb.onclick=()=>{
+    if(listening){ try{rec.stop();}catch(e){} return; }
+    rec=new SR();
+    rec.lang='en-GB'; rec.interimResults=true; rec.continuous=false;
+    heard='';
+    rec.onstart=()=>{ listening=true; mb.classList.add('rec'); q.placeholder='Listening…'; };
+    rec.onresult=ev=>{
+      let s=''; for(const r of ev.results) s+=r[0].transcript;
+      heard=s.trim();
+      q.value=heard; qGrow();
+      sw.classList.toggle('has',!!q.value);
+    };
+    rec.onerror=ev=>{
+      listening=false; mb.classList.remove('rec'); setPromptHint();
+      if(ev.error==='not-allowed'||ev.error==='service-not-allowed')
+        toast('Microphone permission was refused — allow it for this site to talk.');
+      else if(ev.error!=='aborted' && ev.error!=='no-speech')
+        toast('Couldn’t hear that — try again.');
+    };
+    rec.onend=()=>{
+      listening=false; mb.classList.remove('rec'); setPromptHint();
+      if(heard && heard.length>=2) ask(heard);
+      else { q.value=''; sw.classList.remove('has'); qGrow(); }
+    };
+    try{ rec.start(); }catch(e){ toast('Voice couldn’t start just now.'); }
+  };
+})();
 
 /* example asks, so it is obvious what this thing can do */
 const PROMPTS=[
@@ -2077,7 +2262,7 @@ const NEARME=/\b(near me|close by|nearby|around here|round here|near by)\b/;
 const OPENNOW=/\b(open (now|late|rn|right now|tonight|at this (time|hour))|still (open|serving)|(anywhere|anything|any\w* (bars?|pubs?|spots?|places?)) (still )?open|what'?s (still )?open|wh(?:at|ere)('s| is) (still )?open|(is|are) (still )?open)\b/;
 /* the outside layer: nights, gigs, festivals. "party of 6" is a table size,
    "parties" is a Saturday — the regex is deliberately noun-plural about it */
-const EVENTWORDS=/\b(what'?s (on|happening|going on)|whats (on|happening)|any events?|events? (on|near|tonight|this|next|around)|gigs?|raves?|club nights?|parties|lineups?|line-ups?|festivals?|anything (happening|going on))\b/;
+const EVENTWORDS=/\b(what'?s (on|happening|going on)|whats (on|happening)|any events?|events? (on|near|tonight|this|next|around)|gigs?|raves?|club nights?|parties|lineups?|line-ups?|festivals?|anything (happening|going on)|who'?s? (playing|on|performing|spinning|djing|dj'?ing|headlining)|who is (playing|on|performing|spinning)|any (djs?|acts?|artists?) (on|playing|around)|which djs?)\b/;
 /* ---- what someone wants to DO, and what can satisfy it ----
    Keyword lists are why "I want to dance on Friday" never reached the events
    feed: no "gig", no "what's on", so nothing connected. This maps the ACTIVITY
@@ -2113,12 +2298,24 @@ function findPlaces(t){
   return out.slice(0,3);
 }
 
+/* a named cuisine means its FAMILY too: the bank labels "West African", the
+   person says "Nigerian" — those must meet. And the write-up gets a vote: a
+   place described as Nigerian IS Nigerian food, whatever its label says. */
+const CUIFAM={nigerian:'west african', ghanaian:'west african', senegalese:'west african',
+  gambian:'west african', ivorian:'west african',
+  ethiopian:'east african', eritrean:'east african', somali:'east african', kenyan:'east african',
+  moroccan:'north african', tunisian:'north african', algerian:'north african', egyptian:'north african',
+  cantonese:'chinese', sichuan:'chinese', szechuan:'chinese',
+  punjabi:'indian', keralan:'indian', gujarati:'indian'};
 const CUIVOCAB=(()=>{
   const set=new Set();
   DATA.forEach(d=>{ if(d.cui) String(d.cui).split(/[\/&,]/).forEach(x=>{
     x=x.trim(); if(x.length>3 && !/^(restaurant|other|takeaway)$/i.test(x)) set.add(x); }); });
   ['sushi','ramen','tapas','pizza','curry','noodles','dumplings','bbq','kebab','tacos','pasta']
     .forEach(x=>set.add(x));
+  /* the specific cuisines people actually SAY, mapped to families the labels
+     use — "nigerian" must be a recognisable word even though no label says it */
+  Object.keys(CUIFAM).forEach(x=>set.add(x));
   return [...set].sort((a,b)=>b.length-a.length);
 })();
 function findCuisines(seg){
@@ -2128,6 +2325,20 @@ function findCuisines(seg){
     const re=new RegExp('\\b'+c.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','i');
     if(re.test(seg) && !out.some(o=>o.toLowerCase()===c.toLowerCase())) out.push(c);
   });
+  /* GRAMMAR beats vocabulary: "X food", "X restaurant", "X cuisine" makes X a
+     cuisine by construction, whatever X is — "georgian food" is a cuisine ask
+     even though no label and no list knows the word. The machinery downstream
+     then answers honestly (family match, write-up vote, or a clarifying
+     question) instead of the word leaking into text search. */
+  if(!out.length){
+    const m=seg.match(/\b([a-z][a-z-]{3,})\s+(?:food|cuisine|restaurants?|cooking|kitchen|spot|place)s?\b/i);
+    if(m){
+      const x=m[1].toLowerCase();
+      if(!STOPW.has(x) && !KINDWORDS.some(([,re])=>re.test(' '+x+' ')) &&
+         !/^(good|great|best|nice|cheap|fancy|proper|local|street|fast|slow|new|open|late)$/.test(x))
+        out.push(x);
+    }
+  }
   return out;
 }
 
@@ -2180,6 +2391,14 @@ const STOPW=new Set(('a an the and or of in on at to for with from is are be i w
   ' show find get give want need looking look go going lets let please can could would like'+
   ' food eat eating drink drinks bar bars restaurant restaurants cafe cafes pub pubs'+
   ' london tonight today tomorrow now then there here what where which how any some more most'+
+  /* question words that once matched random write-ups: "who's playing this
+     weekend" must never become a text search over "whos" and "playing" */
+  ' who whos whose when why playing happening weekend week this that these those'+
+  /* filler nouns: "dinner OPTIONS in dalston" once kept only the 4 places
+     whose write-ups contain the word "options" and binned 17 real Dalston
+     restaurants. Asking words are never content words. */
+  ' option options idea ideas suggestion suggestions recommendation recommendations'+
+  ' rec recs tip tips little proper decent'+
   ' really very quite bit really just also too very s t').split(/\s+/));
 /* The content words a query leaves behind once EVERYTHING the app already
    understood is stripped out. This matters: "anywhere still open for drinks"
@@ -2305,13 +2524,39 @@ function parseLocal(text){
 const PLANWORDS=/\b(date|night out|take (her|him|them)|for after|after(wards)?|options for|plan|planning|evening|going out|day out)\b/;
 
 /* ---- turn a plan into results ---- */
+/* the write-up vote, with its eyes open: the cuisine word must appear in a
+   FOOD sentence. "Nigerian tapas" counts; "a grand georgian mansion" is
+   architecture, not dinner — Brunswick House taught us that one. */
+function cuisineInText(d, x){
+  const t=textOf(d);
+  const re=new RegExp('\\b'+x.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\b','g');
+  let m;
+  while((m=re.exec(t))){
+    /* "georgian MANSION" is architecture, not dinner — an occurrence naming
+       a building never counts, whatever food words share its sentence */
+    const after=t.slice(m.index+x.length, m.index+x.length+22);
+    if(/^\s*-?(mansion|town ?house|house|building|terrace|villa|architecture|facade|interior|square|era|style)\b/.test(after))
+      continue;
+    const win=t.slice(Math.max(0, m.index-50), m.index+x.length+50);
+    if(/food|cook|cuisine|dish|menu|kitchen|restaurant|caf|chef|plate|grill|tapas|street.?food|spice|flavou?r|curry|stew|joint|canteen|eatery|supper/.test(win))
+      return true;
+  }
+  return false;
+}
 function stopMatches(st){
   return DATA.filter(d=>{
     if(!d.lat) return false;
     if(st.kind && st.kind!=='any' && d.c!==st.kind) return false;
     if(st.cuisines && st.cuisines.length){
       const c=(d.cui||d.t||'').toLowerCase();
-      if(!st.cuisines.some(x=>c.includes(String(x).toLowerCase()))) return false;
+      const ok=st.cuisines.some(x=>{
+        x=String(x).toLowerCase();
+        if(c.includes(x)) return true;
+        const fam=CUIFAM[x];
+        if(fam && c.includes(fam)) return true;
+        return cuisineInText(d, x);
+      });
+      if(!ok) return false;
     }
     if(st.maxBand && d.band && d.band!=='Free'){
       if(BANDORDER.indexOf(d.band) > BANDORDER.indexOf(st.maxBand)) return false;
@@ -2885,6 +3130,7 @@ function runPlan(plan){
     S.planWhen=whenFrom(plan);
     result=buildPlan(plan, origin, startTimeFor(plan));
     result.widened=widened; result.rad=rad;
+    drawArea(null);   // an anchor answer is one place, not a patch
     if(result.anchor && !plan.reply){ plan.reply=describePlan(result); plan._autoReply=true; }
   } else {
     let pool=stopMatches(stops[0]).filter(inRegion);
@@ -2908,7 +3154,10 @@ function runPlan(plan){
       }
     }
     if(terms.length){
-      const scored=pool.map(d=>({d, s:termScore(d, terms)})).filter(x=>x.s>0);
+      /* a word that matches NOTHING anywhere in the bank is noise — usually a
+         typo ("tomotroow"). It must never join a narrowing coalition. */
+      const alive=terms.filter(tm=>DATA.some(d=>d.lat && termScore(d,[tm])>0));
+      const scored=alive.length?pool.map(d=>({d, s:termScore(d, alive)})).filter(x=>x.s>0):[];
       /* Two genuine matches beat forty vague ones — precision first, and the
          thin-bank rule then goes to Google for volume. This threshold was 3
          and silently switched the whole feature off for narrow asks. */
@@ -2916,11 +3165,39 @@ function runPlan(plan){
         const top=Math.max(...scored.map(x=>x.s));
         /* keep the strongest matches; one hit out of four words is noise */
         pool=scored.filter(x=>x.s>=Math.max(1, top-1)).map(x=>x.d);
-        plan._matched=terms;
+        plan._matched=alive;
+      }
+    }
+    /* an empty answer is a QUESTION, not a shrug: when nothing matches the
+       constraint, work out what this patch DOES hold and ask which way to
+       take it — the same move a good concierge makes. Generic: any cuisine,
+       any kind, any area. */
+    plan._clarify=null;
+    if(!pool.length){
+      /* what does the NEIGHBOURHOOD hold (walking terms, not the widened
+         sweep), counted by real cuisine labels only */
+      const relaxed=stopMatches({kind:stops[0].kind||'any', cuisines:[], tags:[]})
+        .filter(d=>origin ? dist(origin.pt,[d.lat,d.lng])<=2.5 : inRegion(d));
+      if(relaxed.length){
+        const counts={};
+        relaxed.forEach(d=>{ const c=(d.cui||'').trim(); if(c) counts[c]=(counts[c]||0)+1; });
+        plan._clarify={
+          askedFor:(stops[0].cuisines||[]).join(' / ')||(plan._matched||[]).join(' / ')||null,
+          alts:Object.entries(counts).sort((a,b)=>b[1]-a[1]).slice(0,3),
+          total:relaxed.length,
+          where:(plan.locations||[])[0]||null };
       }
     }
     result={type:'rows', rows:rank(pool).slice(0,40).map(x=>x.d),
             origin, plan, widened, rad};
+    /* a named area gets PAINTED, not pinned: the soft boundary around the
+       places that answer from there. Near-me and widened sweeps stay clean. */
+    if(origin && (plan.locations||[]).length===1 && !plan.useMyLocation && !widened){
+      const core=result.rows
+        .filter(d=>d.lat && dist(origin.pt,[d.lat,d.lng])<=Math.min(rad||2, 2.5))
+        .map(d=>[d.lat,d.lng]);
+      drawArea(core.length>=3?core:null, plan.locations[0]);
+    } else drawArea(null);
     if(plan.openNow && !plan.reply && origin)
       plan.reply='What’s around you right now, nearest first — checking live opening hours.';
   }
@@ -2932,8 +3209,13 @@ function runPlan(plan){
   /* anchored anywhere the bank is thin — "drinks near me", "drinks in
      northolt", any phrasing: ask Google what is PHYSICALLY around that
      point and show it first. The behaviour tracks the MEANING, never one
-     magic phrase. */
-  if(result.type==='rows' && result.origin && bankFarFrom(result)) fetchNearby(result);
+     magic phrase. BUT a constrained ask ("georgian food") must never be
+     answered with whatever happens to be nearby — a chicken shop is not
+     Georgian food. Discovery (which honours the constraint) answers those. */
+  const constrained=!!(plan._clarify ||
+    (plan.stops&&plan.stops[0]&&plan.stops[0].cuisines&&plan.stops[0].cuisines.length));
+  if(result.type==='rows' && result.origin && bankFarFrom(result) && !constrained)
+    fetchNearby(result);
   drawRoute(result.type==='anchor'?result:null);
   const pts=(result.type==='anchor'
       ? (result.anchor?[[result.anchor.d.lat,result.anchor.d.lng]]:[])
@@ -3067,7 +3349,43 @@ function eventsForNight(when, origin){
   }).slice(0,3);
 }
 
-function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); render(); drawPrompts(); if(typeof drawGhosts==='function') drawGhosts(); }
+function clearPlan(){ S.plan=null; S.sug=null; S.anchorPlace=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); drawArea(null); render(); drawPrompts(); if(typeof drawGhosts==='function') drawGhosts(); }
+
+/* ---- the area, DRAWN: "drinks in Dalston" paints the patch of Dalston the
+   answer actually lives in — a soft boundary around the returned places, so
+   proximity reads at a glance instead of one meaningless pin ---- */
+let areaLayer=null;
+function convexHull(points){
+  const pts=points.slice().sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+  if(pts.length<3) return pts;
+  const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lower=[]; for(const p of pts){
+    while(lower.length>=2 && cross(lower[lower.length-2],lower[lower.length-1],p)<=0) lower.pop();
+    lower.push(p); }
+  const upper=[]; for(let i=pts.length-1;i>=0;i--){ const p=pts[i];
+    while(upper.length>=2 && cross(upper[upper.length-2],upper[upper.length-1],p)<=0) upper.pop();
+    upper.push(p); }
+  return lower.slice(0,-1).concat(upper.slice(0,-1));
+}
+function drawArea(pts, label){
+  if(areaLayer){ map.removeLayer(areaLayer); areaLayer=null; }
+  if(!pts || pts.length<3) return;
+  const hull=convexHull(pts);
+  if(hull.length<3) return;
+  const cx=hull.reduce((s,p)=>s+p[0],0)/hull.length,
+        cy=hull.reduce((s,p)=>s+p[1],0)/hull.length;
+  /* breathe ~120m outward so the pins sit inside the patch, not on its fence */
+  const pad=hull.map(([la,ln])=>{
+    const dla=la-cx, dln=ln-cy;
+    return [cx+dla*1.15+Math.sign(dla)*0.0010, cy+dln*1.15+Math.sign(dln)*0.0016];
+  });
+  areaLayer=L.layerGroup([
+    L.polygon(pad,{color:css('--accent'), weight:1.6, dashArray:'6 5',
+      fillColor:css('--accent'), fillOpacity:.07, interactive:false}),
+    label ? L.marker([cx,cy],{pane:'labels', interactive:false,
+      icon:L.divIcon({className:'plabel arealabel', html:esc(label), iconSize:[0,0]})}) : null
+  ].filter(Boolean)).addTo(map);
+}
 
 /* ---- Angus's list (Lamp), resolved server-side and merged at boot ----
    700 names with no city attached: the importer geocodes them against Google
@@ -3199,15 +3517,25 @@ async function enrFetch(names){
 /* tell the engine what the bank holds, once per version, so it can work
    through everything in the background without the app asking place by place */
 async function postRoster(){
-  const stamp='roster:'+DATA.length;   // DATA.length, not the baked 501 token
-  if(localStorage.getItem('otp:v1:'+stamp)) return;
+  /* Track the last count we actually told the engine about. The old version
+     keyed the stamp on DATA.length, which meant a load that ran before the
+     stores merged wrote a "done" flag for the SMALL number and then matched it
+     forever. Comparing counts can never wedge like that. */
+  const CKEY='otp:v1:rostercount';
+  /* venues learned from events count too: the understanding engine reads
+     their reviews like any other place, so the AI knows them in conversation */
+  const learned=Object.values(EVVEN||{}).filter(v=>v&&v.lat!=null);
+  const pinned=DATA.filter(d=>d.lat).length + learned.length;
+  if(pinned === +(localStorage.getItem(CKEY)||0)) return;
   try{
     const places=DATA.filter(d=>d.lat).map(d=>({n:d.n, gid:d.gid||null,
       addr:d.addr||null, hood:d.hood||d.area||null,
       m:(d.m||[]).slice(0,2).map(m=>({b:m.b||''}))}));
+    learned.forEach(v=>places.push({n:v.name, gid:v.gid||null,
+      addr:v.addr||null, hood:null, m:[]}));
     const r=await fetch('/api/enrich',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'roster', places})});
-    if(r.ok) localStorage.setItem('otp:v1:'+stamp,'1');
+    if(r.ok) localStorage.setItem(CKEY, String(pinned));
   }catch(e){}
 }
 function enrHtml(d){
@@ -3233,23 +3561,155 @@ function enrHtml(d){
 
 /* ---- the outside layer: the events feed, scouted weekly ---- */
 let EVENTS=[], EVENTS_META=null;
+let EVVEN={};   // venues the events have taught: lower(name) -> real place
 async function loadEvents(){
   try{
     const r=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({action:'list'})});
     const d=await r.json();
     if(d && Array.isArray(d.events)){ EVENTS=d.events; EVENTS_META={count:d.count, refreshedAt:d.refreshedAt}; }
+    if(d && d.venues && typeof d.venues==='object') EVVEN=d.venues;
+    learnEventVenues();          // events teach the bank, quietly
   }catch(e){ /* offline or not deployed yet: the ask answers honestly */ }
 }
+/* Events teach the venue bank. An event's venue the app cannot place is
+   looked up ONCE through find (type-filtered — a solicitors never answers
+   for a bar), remembered server-side for every device, and handed to the
+   understanding engine's roster so the AI learns the venue as a place of
+   its own — not just a line on a flyer. */
+async function learnEventVenues(){
+  try{
+    const pass=localStorage.getItem(PASSKEY);
+    if(!pass) return;            // learning writes to the bank: wait for the pass
+    const seen=new Set();
+    const todo=EVENTS.filter(e=>{
+      const v=String(e.venue||'').trim(); if(!v) return false;
+      const k=v.toLowerCase();
+      if(seen.has(k) || EVVEN[k]) return false;
+      if(findVenue(v)) return false;         // the bank already knows it
+      seen.add(k); return true;
+    }).slice(0,4);               // a few per load — quiet, never a stampede
+    if(!todo.length) return;
+    const found=[];
+    for(const e of todo){
+      try{
+        const r=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({q:e.venue, area:e.area||''})});
+        const j=await r.json();
+        const hit=(j.places||[])[0];
+        if(hit && hit.lat!=null)
+          found.push({venue:e.venue, name:hit.name, lat:hit.lat, lng:hit.lng,
+            gid:hit.id||null, addr:hit.address||null, kind:hit.kind||null});
+      }catch(err){}
+    }
+    if(!found.length) return;
+    const r2=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'savevenues', pass, venues:found})});
+    const j2=await r2.json();
+    if(j2 && j2.ok){
+      found.forEach(v=>{ EVVEN[v.venue.toLowerCase()]=
+        {name:v.name, lat:v.lat, lng:v.lng, gid:v.gid, addr:v.addr, kind:v.kind}; });
+      postRoster();              // the understanding engine learns them too
+      if(S.plan && S.plan.type==='events'){ S.plan._drawn=true; render(); }
+    }
+  }catch(e){}
+}
 let evLayer=null;
+/* Where is this event? Its own pin if it carries one; else the venue, if the
+   bank knows it; else its area. approx marks anything short of an address —
+   an event deserves the same map presence as a restaurant, honestly labelled. */
+function evPlace(e){
+  if(e.lat!=null) return {lat:e.lat, lng:e.lng, approx:false};
+  const v=findVenue(e.venue||'');
+  if(v) return {lat:v.lat, lng:v.lng, approx:false};
+  /* a venue the events have already taught us: exact, shared by every device */
+  const l=EVVEN[String(e.venue||'').trim().toLowerCase()];
+  if(l && l.lat!=null) return {lat:l.lat, lng:l.lng, approx:false};
+  if(e.area){
+    const g=GAZ.find(g2=>g2.name.toLowerCase()===String(e.area).toLowerCase());
+    if(g && g.lat!=null) return {lat:g.lat, lng:g.lng, approx:true};
+  }
+  return null;
+}
+/* an event opens like a place: the pin drops, the map flies, the card tells
+   the story — date, hours (or the honest lack of an end time), line-up, the
+   venue tied back to the bank when it is known. The chat behind it keeps its
+   history to the word. */
+function openEventDetail(e){
+  const pl=evPlace(e);
+  dname.textContent=e.title||'Event';
+  const d0=new Date(e.start);
+  const bits=[];
+  bits.push('<span class="tag">'+esc(d0.toLocaleDateString('en-GB',{weekday:'long', day:'numeric', month:'short'}))+'</span>');
+  let tm=String(d0.getHours()).padStart(2,'0')+':'+String(d0.getMinutes()).padStart(2,'0');
+  let endNote='';
+  if(e.end){ const de=new Date(e.end);
+    if(!isNaN(de.getTime())) tm+=' – '+String(de.getHours()).padStart(2,'0')+':'+String(de.getMinutes()).padStart(2,'0'); }
+  else endNote=' · no end time listed';
+  bits.push('<span class="tag">'+esc(tm+endNote)+'</span>');
+  if(e.venue) bits.push('<span class="tag">'+esc(e.venue)+(pl&&pl.approx?' · placed by its area':'')+'</span>');
+  (e.genres||[]).slice(0,3).forEach(g=>bits.push('<span class="tag">'+esc(g)+'</span>'));
+  const ps=document.getElementById('photoslot'); if(ps) ps.innerHTML='';
+  /* WHERE, plainly: venue, street, area — plus what the app has learned about
+     the venue from resolving it, and how far it is from you */
+  const learned=EVVEN[String(e.venue||'').trim().toLowerCase()];
+  /* the VENUE leads — its resolved name (the one the learning pipeline banked
+     and the wider intelligence knows), then street, then area */
+  const vname=(learned&&learned.name)||e.venue||null;
+  const whereBits=[
+    vname?('<b>'+esc(vname)+'</b>'+(learned&&learned.name&&e.venue&&learned.name!==e.venue
+      ?' <span class="usrc">(listed as “'+esc(e.venue)+'”)</span>':'')) : null,
+    esc(e.addr||(learned&&learned.addr)||'')||null,
+    e.area?esc(e.area):null
+  ].filter(Boolean).filter((v,i,arr)=>arr.indexOf(v)===i);
+  const distTxt=(S.me&&pl)?fmtDist(dist(S.me,[pl.lat,pl.lng]))+' from you':null;
+  dbody.innerHTML='<div class="tagrow" style="margin:4px 0 10px">'+bits.join('')+'</div>'+
+    '<p style="margin:0 0 8px"><b>Where:</b> '+
+      (whereBits.length?whereBits.join(' · '):'not published — the tickets page will say')+
+      (distTxt?' · '+esc(distTxt):'')+
+      (pl&&pl.approx?' <span class="usrc">(pinned by its area — no exact address yet)</span>':'')+'</p>'+
+    ((e.artists||[]).length?'<p style="margin:0 0 8px"><b>Line-up:</b> '+esc(e.artists.join(', '))+'</p>':'')+
+    (e.why?'<p style="margin:0 0 8px">'+esc(e.why)+'</p>':'')+
+    '<p class="usrc" style="margin:0">Scouted via '+esc(e.src||'the feed')+'.'+
+    (pl?'':' No location could be pinned for this one — the tickets page will say.')+'</p>';
+  /* the flyer: pulled once from the event page's own share-image, cached */
+  if(e.id){
+    fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'flyer', id:e.id})}).then(r=>r.json()).then(j=>{
+      if(!j || !j.ok || dname.textContent!==(e.title||'Event')) return;
+      if(j.image && ps){
+        /* the WHOLE flyer, uncropped — it is the poster, not a thumbnail.
+           Tapping it goes where the flyer would take you: the tickets page. */
+        /* the WHOLE flyer, never cropped — but bounded, so the card beneath
+           it still scrolls. Tap for the real thing on the tickets page. */
+        ps.innerHTML='<div class="gphoto" style="text-align:center"><img src="'+esc(j.image)+'" alt="" '+
+          'style="max-width:100%;max-height:38dvh;width:auto;height:auto;display:inline-block;'+
+          'border-radius:14px;cursor:pointer"></div>';
+        const im=ps.querySelector('img');
+        if(im && e.url) im.onclick=()=>window.open(e.url,'_blank','noopener');
+      }
+      if(j.desc && !e.why) dbody.insertAdjacentHTML('beforeend',
+        '<p style="margin:8px 0 0">'+esc(j.desc)+'</p>');
+    }).catch(()=>{});
+  }
+  const va=findVenue(e.venue||'');
+  dactions.innerHTML=(e.url?'<a class="btn pri" target="_blank" rel="noopener" href="'+esc(e.url)+'">Tickets</a>':'')+
+    (va?'<button class="btn" id="devvenue">The venue: '+esc(va.n)+'</button>':'');
+  const vb=document.getElementById('devvenue');
+  if(vb) vb.onclick=()=>openDetail(va,true);
+  detail.classList.add('open'); document.body.classList.add('detail-open');
+  if(pl){ drawEventMarkers([e]);
+    setTimeout(()=>{ map.invalidateSize(); focusPin(pl.lat, pl.lng); },120); }
+}
 function drawEventMarkers(list){
   if(evLayer){ map.removeLayer(evLayer); evLayer=null; }
-  const pts=(list||[]).filter(e=>e.lat);
+  const pts=(list||[]).map(e=>({e, pl:evPlace(e)})).filter(x=>x.pl);
   if(!pts.length) return;
-  evLayer=L.layerGroup(pts.map(e=>{ /* events: no hours model, no dot */
-    const m=L.marker([e.lat,e.lng],{icon:L.divIcon({className:'lm',
-      html:'<div class="mk ev">'+svg('culture')+'</div>', iconSize:[26,26], iconAnchor:[13,26]}),
-      title:e.title});
+  evLayer=L.layerGroup(pts.map(({e, pl})=>{ /* events: no hours model, no dot */
+    const m=L.marker([pl.lat,pl.lng],{icon:L.divIcon({className:'lm',
+      html:'<div class="mk ev'+(pl.approx?' approx':'')+'">'+svg('culture')+'</div>',
+      iconSize:[26,26], iconAnchor:[13,26]}),
+      title:e.title+(pl.approx?' (by area)':'')});
     m.on('click',()=>{ if(e.url) window.open(e.url,'_blank','noopener'); });
     return m;
   })).addTo(map);
@@ -3260,8 +3720,12 @@ function evCard(e, origin){
   const d=new Date(e.start);
   const wd=d.toLocaleDateString('en-GB',{weekday:'short'});
   const dm=d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
-  const tm=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
-  const km=(origin&&e.lat)?fmtDist(dist(origin.pt,[e.lat,e.lng]))+' away':null;
+  let tm=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  /* the end time is half of "can I make a night of it" — show it when known */
+  if(e.end){ const de=new Date(e.end);
+    if(!isNaN(de)) tm+='–'+String(de.getHours()).padStart(2,'0')+':'+String(de.getMinutes()).padStart(2,'0'); }
+  const pl0=evPlace(e);
+  const km=(origin&&pl0)?fmtDist(dist(origin.pt,[pl0.lat,pl0.lng]))+(pl0.approx?' away (by area)':' away'):null;
   el.innerHTML='<div class="evdate"><b>'+esc(wd)+'</b><span>'+esc(dm)+'</span></div>'+
     '<div style="min-width:0;flex:1"><h3>'+esc(e.title)+'</h3>'+
     '<p class="meta">'+esc([e.venue, e.area, tm, km].filter(Boolean).join(' · '))+'</p>'+
@@ -3270,7 +3734,9 @@ function evCard(e, origin){
     (e.src?'<span class="tag">via '+esc(e.src)+'</span>':'')+'</div></div>'+
     (e.url?'<a class="savebtn evgo" target="_blank" rel="noopener" href="'+esc(e.url)+'">Tickets</a>':'');
   const a=el.querySelector('.evgo'); if(a) a.onclick=ev=>ev.stopPropagation();
-  el.onclick=()=>{ if(e.lat) focusPin(e.lat,e.lng); else if(e.url) window.open(e.url,'_blank','noopener'); };
+  /* tap the card, meet the event: pin on the map, the full story in a card —
+     the same move a venue card makes. Tickets stays its own button. */
+  el.onclick=()=>openEventDetail(e);
   return el;
 }
 
@@ -3518,9 +3984,19 @@ async function fetchNearby(result){
         plan.reply='Straight with you — even beyond your bank, everything close by looks shut. '+
           'Nearest would be '+places[0].name+', '+kmTxt(places[0])+' away.';
         plan._nearbySaid=true;
-      } else if(!plan.openNow){
-        plan.reply='Your bank has nothing close to here, so these are what\'s actually around you — '+
-          places[0].name+' is '+kmTxt(places[0])+' away.';
+      } else if(!plan.openNow && !plan._clarify){
+        /* a clarify question owns the conversation — the generic "what's
+           around" line must not claim to answer a cuisine it cannot honour */
+        /* name the anchor: "close to here" read as "close to you" even when
+           the search was anchored on Dalston */
+        const where=(result.origin.label && !/^(you|your location|me)$/i.test(result.origin.label))
+          ? result.origin.label : 'you';
+        const own=(result.rows||[]).find(d2=>d2.lat);
+        plan.reply='Your bank has nothing right on top of '+where+
+          ', so these are what\'s actually around — '+
+          places[0].name+' is '+kmTxt(places[0])+' away.'+
+          (own?' Your own nearest is '+own.n+', '+
+            fmtDist(dist(result.origin.pt,[own.lat,own.lng]))+' out — it\'s below too.':'');
         plan._nearbySaid=true;
       }
     }
@@ -3690,6 +4166,149 @@ function planSummary(plan, res){
   };
 }
 
+/* ---------- follow-ups about the options ON SCREEN ----------
+   "which one is close to a bar?" is a question about the answer, not a new
+   search. Read it here — ranked with real distances, no model call. */
+function currentOptions(){
+  const p=S.plan; if(!p) return [];
+  const ven=d=>({n:d.n, lat:d.lat, lng:d.lng, kind:d.c, area:d.hood||d.area||'', d});
+  if(p.type==='anchor'){
+    const out=[]; if(p.anchor) out.push(ven(p.anchor.d));
+    (p.onward||[]).forEach(o=>{ if(o.d) out.push(ven(o.d)); });
+    return out;
+  }
+  if(p.type==='rows') return (p.rows||[]).slice(0,12).map(ven);
+  /* events are options too: "I want to dance" → 16 events → "which one…".
+     Placed by evPlace — venue, else area — and SAY when it went by the area. */
+  if(p.type==='events') return (p.rows||[]).slice(0,12).map(e=>{
+    const pl=evPlace(e);
+    return {n:e.title||e.name||'', lat:pl?pl.lat:null, lng:pl?pl.lng:null,
+      kind:'event', area:e.venue||e.area||'', ev:e, approx:!!(pl&&pl.approx)};
+  });
+  return [];
+}
+const KINDNOUN=[
+  ['drink',/\b(bars?|pubs?|drinks?|wine bars?|cocktails?|boozers?)\b/],
+  ['eat',/\b(restaurants?|food|dinner|lunch|somewhere to eat)\b/],
+  ['coffee',/\b(coffee|cafes?|cafés?|matcha)\b/],
+  ['culture',/\b(galler(?:y|ies)|museums?|cinemas?|theatres?)\b/],
+  ['outdoors',/\b(parks?|gardens?|green space)\b/],
+  ['shop',/\b(shops?|markets?|bookshops?)\b/]];
+const KINDSAY={drink:'a bar',eat:'somewhere to eat',coffee:'a coffee',
+  culture:'something to see',outdoors:'a park',shop:'a shop'};
+function optionRefine(text){
+  const p=S.plan;
+  if(!p || (p.type!=='anchor' && p.type!=='rows' && p.type!=='events')) return false;
+  const t=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
+  /* -------- time questions about events: "which one ends the latest?" ----
+     Start and end live on the event itself. Rank by what IS published; say
+     plainly what is not. Never a list pretending to be an answer. */
+  if(p.type==='events' && /\b(which|what|when|who)\b/.test(t) &&
+     /\b(ends?|ending|finish(?:es|ing)?|closing|latest|longest|wind(?:s)? down|starts?|starting|begins?|earliest|soonest)\b/.test(t) &&
+     !/\b(close|near) to\b/.test(t)){
+    const rows=(p.rows||[]);
+    const wantStart=/\b(starts?|starting|begins?|earliest|soonest)\b/.test(t) &&
+      !/\b(ends?|ending|finish|closing|wind)\b/.test(t);
+    const fmt=d=>d.toLocaleDateString('en-GB',{weekday:'short'})+' '+
+      String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+    /* "latest" between different NIGHTS means latest on the night clock —
+       a 2am finish beats a Sunday-afternoon one, whatever the calendar says */
+    const nightMin=d=>{const h=d.getHours(); return (h<8?h+24:h)*60+d.getMinutes();};
+    const withT=rows.map(e=>{ const d=new Date(wantStart?e.start:(e.end||NaN));
+      return {e, at:isNaN(d.getTime())?null:d}; });
+    const known=withT.filter(x=>x.at), unknown=withT.filter(x=>!x.at);
+    let reply;
+    if(wantStart){
+      const early=/\b(earliest|soonest|first)\b/.test(t);
+      known.sort((a,b)=>early?a.at-b.at:nightMin(b.at)-nightMin(a.at));
+      if(!known.length) return false;
+      reply=(early?'Earliest start: ':'Latest start: ')+known[0].e.title+' — '+fmt(known[0].at)+'.';
+      if(known[1]) reply+=' Then '+known.slice(1,3).map(x=>x.e.title+' ('+fmt(x.at)+')').join('; ')+'.';
+    } else if(!known.length){
+      /* the honest answer: that data is not published, so say so — and give
+         the nearest fact that does exist instead of a bluff */
+      const st=rows.map(e=>({e, at:new Date(e.start)})).filter(x=>!isNaN(x.at.getTime()))
+        .sort((a,b)=>nightMin(b.at)-nightMin(a.at));
+      reply='I can’t rank these by finish: none of the '+rows.length+
+        ' publish an end time.'+(st[0]?' What I do know is starts — the latest to kick off is '+
+        st[0].e.title+' ('+fmt(st[0].at)+'). The tickets page will have the finish.':'');
+      p.plan=Object.assign({}, p.plan||{}, {asked:text, reply, via:'refined'});
+      p._drawn=false; render();
+      return true;
+    } else {
+      known.sort((a,b)=>nightMin(b.at)-nightMin(a.at));
+      reply='Finishing latest: '+known[0].e.title+' — till '+fmt(known[0].at)+'.';
+      if(known[1]) reply+=' Then '+known.slice(1,3).map(x=>x.e.title+' (till '+fmt(x.at)+')').join('; ')+'.';
+      if(unknown.length) reply+=' '+unknown.length+' of the '+rows.length+
+        ' don’t publish an end time, so they can’t be ranked — they’re at the back.';
+    }
+    p.rows=[...known.map(x=>x.e), ...unknown.map(x=>x.e)];
+    p.plan=Object.assign({}, p.plan||{}, {asked:text, reply, via:'refined'});
+    p._drawn=false; render();
+    return true;
+  }
+
+  const opts=currentOptions().filter(o=>o.lat!=null && o.n);
+  if(opts.length<2) return false;
+  /* it must actually be about the options, and about closeness */
+  if(!/\b(which|what(?:'s| is)? the|closest|nearest|any of)\b/.test(t)) return false;
+  if(!/\b(clos(?:e|est|er)|near(?:est|er|by)?|walk(?:able|ing)?)\b/.test(t)) return false;
+  let scored=null, targetSay='';
+  const kindHit=(KINDNOUN.find(([,re])=>re.test(t))||[])[0];
+  if(kindHit){
+    targetSay=KINDSAY[kindHit];
+    scored=opts.map(o=>{
+      let best=null;
+      DATA.forEach(x=>{
+        if(x.c!==kindHit || !x.lat || x.n===o.n) return;
+        const km=dist([o.lat,o.lng],[x.lat,x.lng]);
+        if(!best || km<best.km) best={x, km};
+      });
+      return {o, near:best&&best.x, km:best?best.km:Infinity};
+    });
+  } else if(/\b(me|my location|here|us)\b/.test(t) && S.me){
+    targetSay='you';
+    scored=opts.map(o=>({o, km:dist(S.me,[o.lat,o.lng])}));
+  } else {
+    const pl=findPlaces(t).filter(g=>g.lat!=null);
+    const v=pl.length?null:findVenue(text.replace(/^.*\b(?:close|closer|closest|near|nearer|nearest)\s+(?:to\s+)?/i,''));
+    const pt=pl.length?[pl[0].lat,pl[0].lng]:(v?[v.lat,v.lng]:null);
+    if(!pt) return false;
+    targetSay=pl.length?pl[0].name:v.n;
+    scored=opts.map(o=>({o, km:dist(pt,[o.lat,o.lng])}));
+  }
+  scored.sort((a,b)=>a.km-b.km);
+  const top=scored[0];
+  if(!top || top.km===Infinity) return false;
+  const say=x=> (x.near
+    ? x.o.n+' — ~'+walkMins([x.o.lat,x.o.lng],[x.near.lat,x.near.lng])+' min walk to '+x.near.n
+    : x.o.n+' — '+fmtDist(x.km))+(x.o.approx?' (placed by its area — no exact address)':'');
+  const also=scored.slice(1,3).map(say).join('; ');
+  const skipped=currentOptions().filter(o=>o.lat==null).length;
+  const reply='Closest to '+targetSay+': '+say(top)+'.'+(also?' Then '+also+'.':'')+
+    (skipped?' ('+skipped+' of the options I could not place, so they are not ranked.)':'');
+  /* answer with the SAME options, re-ranked — a reply, not a new search.
+     What could not be placed sinks to the end; it is never dropped. */
+  if(p.type==='events'){
+    const ranked=scored.map(x=>x.o.ev);
+    p.rows=[...ranked, ...p.rows.filter(e=>!ranked.includes(e))];
+    p.plan=Object.assign({}, p.plan||{}, {asked:text, reply, via:'refined'});
+    p._drawn=false;
+    render();
+  } else {
+    const ranked=scored.map(x=>x.o.d);
+    const all=p.type==='anchor'?currentOptions().map(o=>o.d):(p.rows||[]);
+    S.plan={type:'rows', rows:[...ranked, ...all.filter(d=>d&&!ranked.includes(d))],
+      origin:p.origin||null, nearby:null, nightEvents:null,
+      plan:Object.assign({}, p.plan||{}, {asked:text, reply, via:'refined', wantsAfter:false})};
+    S.sug=null;
+    render();
+  }
+  /* the map agrees with the words: fly to the winner */
+  focusPin(top.o.lat, top.o.lng);
+  return true;
+}
+
 /* Read a refinement on the phone, no model call. Returns the COMPLETE merged
    plan, or null when it is not a refinement we can read locally. */
 function localRefine(prev, prevResult, text){
@@ -3754,13 +4373,29 @@ function localRefine(prev, prevResult, text){
 async function ask(text, fresh){
   closeDrop();
   q.value=''; S.q=''; sw.classList.remove('has'); sw.classList.remove('ask');
+  qGrow();
   q.blur();       // put the keyboard away NOW — the hanging Done button was this
+  /* the place card that is OPEN when they ask is context: "is it open late",
+     "what's good near here" are about THAT place. Captured before the card
+     is closed so the answer has somewhere to appear. */
+  const focus=S.sel?DATA.find(x=>x.n===S.sel):null;
+  const focusAsk=!!(focus && /(^|[^a-z])(it|its|this place|this spot|here|there)([^a-z]|$)/i.test(text));
+  if(document.body.classList.contains('detail-open'))
+    document.getElementById('dclose').click();
+  pushTurn(text); // the ask joins the conversation before anything is worked out
   S.anchorPlace=null;
-  const prevResult=planActive()?S.plan:null;
+  /* an events answer is as much a conversation as a venue answer */
+  const prevResult=(planActive() || (S.plan&&S.plan.type==='events'))?S.plan:null;
   let prevPlan=(prevResult && !fresh)?prevResult.plan:null;
+  /* a challenge is a CONVERSATION, not a search: "that's impossible", "are
+     you sure" must never be pattern-matched into a new plan — the word
+     "dalston" inside a complaint is not a request for Dalston */
+  const challenged=!!prevPlan &&
+    /(imposs|can'?t be right|are you sure|surely not|no way|not true|don'?t believe|makes no sense|that'?s wrong|why (only|is|are|did|so))/i.test(text);
+
   /* a complete request of its own — a kind AND a place, or a curated day —
      is a new ask, not a refinement of the last one */
-  if(prevPlan){
+  if(prevPlan && !challenged){
     const asNew=parseLocal(text);
     if(asNew && asNew._strong &&
        ((asNew.locations&&asNew.locations.length) || (asNew.venues&&asNew.venues.length)
@@ -3769,24 +4404,97 @@ async function ask(text, fresh){
     }
   }
 
+  /* -------- a question ABOUT the place that was open --------
+     "how many people is it good for?" wants an ANSWER about the place, from
+     the app's own knowledge — never a plan to go somewhere else. */
+  const ABOUTQ=/(^|[^a-z])(how|why|what|whats|when|does|do|is|are|can|could|would|should|worth|any good)([^a-z]|$)/i;
+  const PLANNY=/\b(near(by)?|around|after(wards)?|then|next|instead|close to|before|onwards?|where (to|should|can)|take (me|us)|go (to|on)|from (here|there))\b/i;
+  if(focus && focusAsk && ABOUTQ.test(text) && !PLANNY.test(' '+text.toLowerCase()+' ')){
+    S.plan={type:'thinking', asked:text}; render();
+    try{
+      /* pull the app's own knowledge of the place before asking the model */
+      await Promise.allSettled([enrFetch([focus.n]), edFetch([focus.n])]);
+      const en=enrGet(focus.n)||{}, ed=edGet(focus.n)||{};
+      const st=openState(focus.n, null);
+      const about={ name:focus.n, kind:(CATS[focus.c]||{}).label||focus.c,
+        area:focus.hood||focus.area||'', price:focus.band||focus.price||null,
+        cuisine:focus.cui||focus.t||null, tags:focus.tags||[], rating:focus.rat||null,
+        recommendedBecause:(focus.m&&focus.m[0]&&focus.m[0].b)||null,
+        vibe:en.vibe||en.description||null, bestFor:en.bestFor||[],
+        avoidIf:en.avoidIf||null, peopleOrder:en.order||[],
+        thinEvidence:en.confidence==='low'||false,
+        worthKnowing:ed.gap||null, story:ed.story||null,
+        venueSays:ed.claims||null, pressSays:ed.pressSays||null,
+        knownFor:ed.signature||[],
+        hoursNow:st?(st.open?('open now'+(st.closingAt?' till '+hhmm(st.closingAt):'')):'closed right now')
+                   :'hours not on file' };
+      const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({q:text, about, conv:S.conv.slice(-6)})});
+      const d=await r.json();
+      if(d && d.answer && d.answer.reply){
+        S.plan={type:'rows', rows:[focus], origin:null, nearby:null, nightEvents:null,
+          plan:{asked:text, reply:d.answer.reply, via:'understood', wantsAfter:false}};
+        S.sug=null; render(); return;
+      }
+    }catch(e){}
+    S.plan={type:'failed', asked:text, why:'Could not get an answer about '+focus.n+' just now.'};
+    render(); return;
+  }
+
   /* -------- follow-up on the plan already on screen -------- */
   if(prevPlan){
-    if(/^\s*(another( one)?|something else|next|swap( it)?)\s*[.!]?\s*$/i.test(text)){
-      anotherAnchor(); return;
-    }
-    const merged=localRefine(prevPlan, prevResult, text);
-    if(merged){
-      merged.asked=text;
-      runPlan(merged);
-      chaseThin(merged, S.plan, (prevPlan.asked?prevPlan.asked+' — but ':'')+text);
-      return;
+    if(!challenged){
+      if(/^\s*(another( one)?|something else|next|swap( it)?)\s*[.!]?\s*$/i.test(text)){
+        anotherAnchor(); return;
+      }
+      /* a question about the options themselves — answered here, ranked, free */
+      if(optionRefine(text)) return;
+      const merged=localRefine(prevPlan, prevResult, text);
+      if(merged){
+        merged.asked=text;
+        runPlan(merged);
+        chaseThin(merged, S.plan, (prevPlan.asked?prevPlan.asked+' — but ':'')+text);
+        return;
+      }
     }
     /* not readable here: the model merges it, with the old plan as context */
     S.plan={type:'thinking', asked:text}; render();
     try{
       const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
-        body:JSON.stringify({q:text, prev:planSummary(prevPlan, prevResult)})});
+        body:JSON.stringify({q:text, prev:planSummary(prevPlan, prevResult),
+          /* what the person is LOOKING AT, so "the second one" or "which is
+             cosiest" can be understood — names only, never the bank */
+          options:currentOptions().map(o=>({name:o.n, kind:o.kind, area:o.area})),
+          focus:focus?{name:focus.n, kind:focus.c, area:focus.hood||focus.area||''}:undefined,
+          conv:S.conv.slice(-8)})});
       const d=await r.json();
+      /* the model just TALKED — a challenge answered, a why explained. The
+         plan on screen stands; the words join the conversation. */
+      if(d && d.say && d.say.reply){
+        S.plan=prevResult; S.plan._drawn=true; render();
+        pushBotSay(d.say.reply);
+        return;
+      }
+      /* the model answered ABOUT the options: reorder and reply, no new search */
+      if(d && d.pick && Array.isArray(d.pick.names) && d.pick.names.length){
+        const opts=currentOptions();
+        const chosen=d.pick.names.map(n=>opts.find(o=>o.n===n)).filter(Boolean);
+        if(chosen.length){
+          const ordered=[...chosen, ...opts.filter(o=>!chosen.includes(o))];
+          const reply=d.pick.reply||('I’d go '+chosen[0].n+'.');
+          if(ordered[0].ev){
+            S.plan={type:'events', rows:ordered.map(o=>o.ev), origin:prevResult.origin||null,
+              plan:Object.assign({}, prevPlan, {asked:text, reply, via:'understood'})};
+          } else {
+            S.plan={type:'rows', rows:ordered.map(o=>o.d), origin:prevResult.origin||null,
+              nearby:null, nightEvents:null,
+              plan:Object.assign({}, prevPlan, {asked:text, reply, via:'understood', wantsAfter:false})};
+          }
+          S.sug=null; render();
+          if(chosen[0].lat!=null) focusPin(chosen[0].lat, chosen[0].lng);
+          return;
+        }
+      }
       if(d && d.plan){
         d.plan.asked=text; d.plan.via='understood';
         const t2=' '+text.toLowerCase().replace(/[’']/g,"'")+' ';
@@ -3810,12 +4518,15 @@ async function ask(text, fresh){
   /* -------- a fresh ask -------- */
   if(fresh && S.plan){ S.plan=null; S.sug=null; drawSugMarkers([]); drawNearbyMarkers([]); drawEventMarkers([]); drawRoute(null); drawAlts(null); }
   let local=parseLocal(text);
+  /* said with "it/here" while a place card is open: the local parser would
+     misread "near here" as near-me — the model gets the place and decides */
+  if(focusAsk) local=null;
   /* Nothing recognisable — no kind, no area, no tag — but the words might
      still be written down somewhere in the bank: a dish from a write-up, a
      backstory, a name in a note. Search the text before giving up. Two or
      more matches means it is a search; a single match is a venue lookup, so
      that is left to looksLikeName below. */
-  if(!local){
+  if(!local && !focusAsk){
     const terms=termsFrom(text);
     const phrase=String(text).toLowerCase().replace(/[^a-z0-9 ]/g,' ')
       .split(/\s+/).filter(w=>w.length>2 && !STOPW.has(w)).join(' ');
@@ -3836,7 +4547,7 @@ async function ask(text, fresh){
         terms:terms.length?terms:[phrase], via:'built in', _strong:true, _textOnly:true, reply:null};
   }
   /* a bare venue name is "where is this place" — answer it, don't interrogate it */
-  if(!local && looksLikeName(text)){ lookup(text); return; }
+  if(!local && !focusAsk && looksLikeName(text)){ lookup(text); return; }
   if(local){ local.reply=null; local.asked=text; runPlan(local); }
   else { S.plan={type:'thinking', asked:text}; render(); }
 
@@ -3850,7 +4561,9 @@ async function ask(text, fresh){
 
   try{
     const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({q:text})});
+      body:JSON.stringify({q:text,
+        focus:focus?{name:focus.n, kind:focus.c, area:focus.hood||focus.area||''}:undefined,
+        conv:focusAsk?S.conv.slice(-8):undefined})});
     const d=await r.json();
     if(d && d.plan){
       d.plan.asked=text; d.plan.via='understood';
@@ -3897,14 +4610,123 @@ function match(d){
 /* ---------------- render ---------------- */
 const listEl=document.getElementById('list'), countEl=document.getElementById('count');
 
+/* ---------------- the conversation ----------------
+   The sheet is a chat. Past turns freeze into bubbles in #chatlog (their cards
+   stay tappable — nodes are MOVED, not cloned, so listeners survive); the
+   current answer renders live into #latest below them. */
+const chatlog=document.createElement('div'); chatlog.className='chatlog';
+const latestEl=document.createElement('div'); latestEl.className='latest';
+listEl.appendChild(chatlog); listEl.appendChild(latestEl);
+S.conv=[];
+
+function pushTurn(text, img){
+  /* an answer is on screen: its WORDS become history. The cards do not —
+     history reads as a chat, and the live answer below owns the options. */
+  if(S.plan && (S.plan.type==='anchor'||S.plan.type==='rows'||S.plan.type==='events')){
+    const p=S.plan;
+    let said=(p.plan&&p.plan.reply)||'';
+    if(!said){
+      const n=p.type==='anchor'?(p.anchor?1+(p.onward||[]).length:0):(p.rows||[]).length;
+      said=n?n+' option'+(n===1?'':'s')+' for “'+((p.plan&&p.plan.asked)||'that')+'”':'Nothing fit that one.';
+    }
+    const held=document.createElement('div'); held.className='msg bot';
+    held.innerHTML='<div class="saybar"></div>';
+    held.firstChild.textContent=said;
+    chatlog.appendChild(held);
+    S.conv.push({role:'assistant', text:said});
+  }
+  const u=document.createElement('div'); u.className='msg user';
+  if(img){ const im=document.createElement('img'); im.className='snap'; im.src=img; u.appendChild(im); }
+  if(text){ const sp=document.createElement('div'); sp.textContent=text; u.appendChild(sp); }
+  chatlog.appendChild(u);
+  S.conv.push({role:'user', text:text||'[photo]'});
+  /* a conversation, not an archive: keep the last few exchanges */
+  while(chatlog.children.length>10) chatlog.removeChild(chatlog.firstChild);
+  while(S.conv.length>12) S.conv.shift();
+  requestAnimationFrame(()=>{ listEl.scrollTop=Math.max(0, u.offsetTop-52); });
+}
+function clearChat(){ chatlog.innerHTML=''; latestEl.innerHTML=''; S.conv=[]; }
+/* the bot says something WITHOUT a plan attached — a photo reading, a question back */
+function pushBotSay(said){
+  const held=document.createElement('div'); held.className='msg bot';
+  held.innerHTML='<div class="saybar"></div>';
+  held.firstChild.textContent=said;
+  chatlog.appendChild(held);
+  S.conv.push({role:'assistant', text:said});
+  requestAnimationFrame(()=>{ listEl.scrollTop=listEl.scrollHeight; });
+}
+/* a photo joins the conversation: the model says what it sees — venue names,
+   an event, a list — and the app acts on it, or asks the one question it
+   needs. Never a silent shrug. */
+async function askPhoto(dataUrl){
+  if(!dataUrl){ toast('Could not read that image.'); return; }
+  const b64=dataUrl.split(',')[1];
+  pushTurn('', dataUrl);
+  S.plan={type:'thinking', asked:'your photo'}; render();
+  try{
+    const r=await fetch('/api/ask',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({image:{data:b64, media_type:'image/jpeg'}, conv:S.conv.slice(-6)})});
+    const d=await r.json();
+    const s=d && d.seen;
+    if(s && s.reply){
+      const hits=(s.venues||[]).map(v=>findVenue(v)).filter(Boolean);
+      if(hits.length){
+        S.plan={type:'rows', rows:hits, origin:null, nearby:null, nightEvents:null,
+          plan:{asked:'your photo', reply:s.reply, via:'understood', wantsAfter:false}};
+        S.sug=null; render();
+        if(hits[0].lat) focusPin(hits[0].lat, hits[0].lng);
+        return;
+      }
+      /* it read a name the bank doesn't hold: say what it saw, then look
+         the first one up properly (Google-verified, the existing path) */
+      pushBotSay(s.reply);
+      latestEl.innerHTML=''; S.plan=null; setPromptHint();
+      if((s.venues||[]).length) lookup(s.venues[0]);
+      return;
+    }
+  }catch(e){}
+  pushBotSay('I couldn’t read that photo just now — try again, or tell me what it shows.');
+  latestEl.innerHTML=''; S.plan=null; setPromptHint();
+}
+
+/* the map follows the flick: settle on a card and the map glides to that
+   place. Debounced — fast scrolling does nothing until the finger settles,
+   then it eases to whichever card you stopped on. */
+function trackOptrow(row, items, at){
+  let t=null;
+  row.addEventListener('scroll',()=>{
+    clearTimeout(t);
+    t=setTimeout(()=>{
+      const mid=row.scrollLeft+row.clientWidth/2;
+      let best=null, bd=1e9;
+      [...row.children].forEach((el,i)=>{
+        if(i>=items.length) return;            // the "as a list" button
+        const c=el.offsetLeft+el.offsetWidth/2;
+        const d2=Math.abs(c-mid);
+        if(d2<bd){ bd=d2; best=items[i]; }
+      });
+      if(!best) return;
+      const pt=at(best);
+      if(pt) try{ map.panTo(pt,{animate:true, duration:.5}); }catch(e){}
+    },180);
+  },{passive:true});
+}
+
+/* one gesture, one meaning: throwing the sheet away IS starting fresh */
+function freshChat(){
+  S.browse=false; clearPlan(); clearChat();
+  q.value=''; S.q=''; sw.classList.remove('has'); qGrow();
+  toast('Fresh start — ask away');
+}
+
 /* the input never wastes its words: at rest it invites, mid-conversation it
    teaches the follow-up moves — the box itself says what the app can do next */
 function setPromptHint(){
   if(!q) return;
   if(S.plan && (S.plan.type==='rows'||S.plan.type==='anchor'))
-    q.placeholder='Follow up — “cheaper”, “another”, “in soho instead”…';
+    q.placeholder='Follow up — “cheaper”, “another”…';
   else if(S.plan && S.plan.type==='events')
-    q.placeholder='“what’s on tonight”? Or switch back to food and drinks…';
+    q.placeholder='Follow up, or ask for food…';
   else if(S.plan && S.plan.type==='thinking')
     q.placeholder='Reading that…';
   else q.placeholder='Ask me where to go…';
@@ -3915,6 +4737,8 @@ function render(){
   /* at rest the phone shows map + composer only; the list is opt-in via ⋯ */
   document.body.classList.toggle('home', window.innerWidth<=860 && !S.plan && !S.browse);
   if(S.plan){ renderPlan(); return; }
+  /* browsing the library is not a conversation: the transcript stands down */
+  if(chatlog.childNodes.length) clearChat();
   let rows=DATA.filter(match);
   if(S.me) rows.sort((a,b)=>{
     if(!a.lat) return 1; if(!b.lat) return -1;
@@ -3929,13 +4753,13 @@ function render(){
   rows.forEach(d=>{ const m=markers.get(d.n); if(m){ live.push(m); } });
   cluster.addLayers(live);
 
-  listEl.innerHTML='';
+  latestEl.innerHTML='';
   if(!rows.length){
-    listEl.innerHTML='<div class="empty">Nothing matches that combination.<br>Try removing a filter.</div>';
+    latestEl.innerHTML='<div class="empty">Nothing matches that combination.<br>Try removing a filter.</div>';
   }
   const frag=document.createDocumentFragment();
   rows.forEach(d=>frag.appendChild(card(d)));
-  listEl.appendChild(frag);
+  latestEl.appendChild(frag);
 
   /* a filtered browse is a shortlist someone is actually weighing up: fetch
      hours for the top of it so "until 23:00" / "Closed now" shows on the
@@ -3967,7 +4791,7 @@ function render(){
     'Some entries are dated events — check the post before you go.</p>'+
     '<p style="margin:10px 0 0"><button class="lnk" id="addig">Add places from an Instagram post</button>'+
     ' — or paste a post link into the search box.</p>';
-  listEl.appendChild(f);
+  latestEl.appendChild(f);
   const ab=f.querySelector('#addig'); if(ab) ab.onclick=()=>openInstaSheet();
   updateFilterCount();
   drawPrompts();
@@ -4021,11 +4845,11 @@ function renderSuggestions(){
     b.className='widerbtn'; b.type='button';
     b.textContent='Look beyond your bank';
     b.onclick=()=>fetchSuggestions(sg.text, sg.known);
-    listEl.appendChild(b);
+    latestEl.appendChild(b);
     return;
   }
   if(sg.loading){
-    listEl.insertAdjacentHTML('beforeend',
+    latestEl.insertAdjacentHTML('beforeend',
       '<div class="sechead">Also worth knowing</div><div class="loadingrow">'+
       (sg.auto?'Your bank is thin for this one — looking beyond it…':'Looking beyond your bank…')+'</div>');
     return;
@@ -4034,7 +4858,7 @@ function renderSuggestions(){
     const why = sg.failed ? 'the wider search could not be reached just now.'
       : sg.proposed ? ('the model put forward '+sg.proposed+', and none could be confirmed against the food hygiene register, so none are shown.')
       : 'nothing else came up beyond your own list.';
-    listEl.insertAdjacentHTML('beforeend',
+    latestEl.insertAdjacentHTML('beforeend',
       '<div class="sechead">Not in your bank</div><div class="secnote">'+
       (sg.auto ? 'Your bank is thin for this one, so the wider search ran on its own — but '+why
                : why.charAt(0).toUpperCase()+why.slice(1))+'</div>');
@@ -4047,8 +4871,8 @@ function renderSuggestions(){
   const head=document.createElement('div');
   head.className='sechead';
   head.innerHTML='Not in your bank <span class="badge">'+fresh.length+' suggested</span>';
-  listEl.appendChild(head);
-  listEl.insertAdjacentHTML('beforeend',
+  latestEl.appendChild(head);
+  latestEl.insertAdjacentHTML('beforeend',
     '<div class="secnote">'+(sg.allShut?(sg.when&&Math.abs(sg.when-new Date())>45*60000
         ? 'Honestly? Checked against Google\'s hours, none of these are open then either — they\'re here for next time. '
         : 'Honestly? These look shut right now too — they\'re here for next time. '):'')+
@@ -4061,9 +4885,15 @@ function renderSuggestions(){
     (sg.auto?'Your bank is thin for this one, so the wider search ran on its own. ':'')+
     'The model put these forward and each address was checked against the '+
     'UK food hygiene register. Nobody you trust has vouched for them.</div>');
-  const f=document.createDocumentFragment();
-  fresh.forEach(p=>f.appendChild(sugCard(p)));
-  listEl.appendChild(f);
+  if(window.innerWidth<=860 && fresh.length>1){
+    const f=document.createElement('div'); f.className='optrow';
+    fresh.forEach(p=>f.appendChild(sugCard(p)));
+    latestEl.appendChild(f);
+  } else {
+    const f=document.createDocumentFragment();
+    fresh.forEach(p=>f.appendChild(sugCard(p)));
+    latestEl.appendChild(f);
+  }
 }
 
 /* the plan itself: times, walks, and a swap on every stop */
@@ -4169,46 +4999,60 @@ function renderPlan(){
      what made the list feel unscrollable on the phone. Only a new plan snaps. */
   const again=!!p._drawn; p._drawn=true;
   const keep=again?listEl.scrollTop:0;
-  listEl.innerHTML='';
+  latestEl.innerHTML='';
   if(p.type==='thinking'){
     countEl.textContent='thinking…';
-    listEl.innerHTML='<div class="thinking">Working out what you mean by “'+esc(p.asked)+'”…</div>';
+    latestEl.innerHTML='<div class="thinking">Working out what you mean by “'+esc(p.asked)+'”…</div>';
     if(typeof applySnap==='function' && window.innerWidth<=860 && snapIdx===0) applySnap(1);
     return;
   }
   if(p.type==='failed'){
     countEl.textContent='no plan';
-    listEl.innerHTML='<div class="empty">'+esc(p.why)+'<br><br>Try naming a place, like “drinks near Peckham”.</div>';
+    latestEl.innerHTML='<div class="empty">'+esc(p.why)+'<br><br>Try naming a place, like “drinks near Peckham”.</div>';
     const f=document.createElement('div'); f.className='planbar';
     f.innerHTML='<div class="pb">'+esc(p.asked)+'</div><button id="clearplan">clear</button>';
     setTimeout(()=>{const b=document.getElementById('clearplan'); if(b) b.onclick=clearPlan;},0);
-    listEl.prepend(f);
+    latestEl.prepend(f);
     return;
   }
   if(p.type==='events'){
     countEl.textContent=p.rows.length?p.rows.length+' events':'no events';
     cluster.clearLayers();                    // events live on their own layer
-    listEl.appendChild(planBar(p));
+    latestEl.appendChild(planBar(p));
     if(!p.rows.length){
-      listEl.insertAdjacentHTML('beforeend','<div class="empty">'+
+      latestEl.insertAdjacentHTML('beforeend','<div class="empty">'+
         (EVENTS.length
           ? 'Nothing in that window.<br>Try “what’s on” with no day for the full fortnight.'
           : 'The feed fills weekly from orixa.fm and the editorial list.<br>Nothing has been scouted yet.')+'</div>');
     }
-    const frag=document.createDocumentFragment();
-    p.rows.forEach(e=>frag.appendChild(evCard(e, p.origin)));
-    listEl.appendChild(frag);
+    /* events flick sideways too — the same hand of cards a venue answer gets */
+    if(window.innerWidth<=860 && p.rows.length>1 && !p._flat){
+      const row=document.createElement('div'); row.className='optrow';
+      const cap=12;
+      const shown=p.rows.slice(0,cap);
+      shown.forEach(e=>row.appendChild(evCard(e, p.origin)));
+      const more=document.createElement('button'); more.className='optmore';
+      more.textContent=p.rows.length>cap ? 'All '+p.rows.length+' as a list' : 'As a list';
+      more.onclick=()=>{ p._flat=true; render(); };
+      row.appendChild(more);
+      latestEl.appendChild(row);
+      trackOptrow(row, shown, e=>{ const pl=evPlace(e); return pl?[pl.lat,pl.lng]:null; });
+    } else {
+      const frag=document.createDocumentFragment();
+      p.rows.forEach(e=>frag.appendChild(evCard(e, p.origin)));
+      latestEl.appendChild(frag);
+    }
     /* the link between the two layers, made visible: an event has an hour and
        an address, so say what is actually open around it */
     if(p.aroundPending)
-      listEl.insertAdjacentHTML('beforeend','<div class="loadingrow">Checking what is open around it…</div>');
+      latestEl.insertAdjacentHTML('beforeend','<div class="loadingrow">Checking what is open around it…</div>');
     else if(p.around){          // render even when BOTH are empty: that is a finding
       const a=p.around, hm=d=>String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
-      listEl.insertAdjacentHTML('beforeend',
+      latestEl.insertAdjacentHTML('beforeend',
         '<div class="sechead">Around '+esc(a.ev.title.slice(0,40))+'</div>');
       const row=(label,list,when)=>{
         if(!list.length) return;
-        listEl.insertAdjacentHTML('beforeend','<div class="secnote">'+label+' ('+hm(when)+')</div>');
+        latestEl.insertAdjacentHTML('beforeend','<div class="secnote">'+label+' ('+hm(when)+')</div>');
         list.forEach(x=>{
           const el=document.createElement('div');
           el.className='after';
@@ -4218,21 +5062,21 @@ function renderPlan(){
                  x.d.cui||x.d.t].filter(Boolean).join(' · '))+'</p></div>'+
             (x.st.closingAt?'<span class="now">till '+hhmm(x.st.closingAt)+'</span>':'<span class="now">open</span>');
           el.onclick=()=>openDetail(x.d,true);
-          listEl.appendChild(el);
+          latestEl.appendChild(el);
         });
       };
       row('Before it', a.before, a.beforeAt);
       row('When you come out', a.after, a.afterAt);
       /* silence would read as "nothing to say". Say the actual finding. */
       if(!a.after.length)
-        listEl.insertAdjacentHTML('beforeend','<div class="secnote">Nothing in your bank near the venue '+
+        latestEl.insertAdjacentHTML('beforeend','<div class="secnote">Nothing in your bank near the venue '+
           'is still open when it winds down — that is a night bus, not a nightcap.</div>');
       if(!a.before.length)
-        listEl.insertAdjacentHTML('beforeend','<div class="secnote">Nothing of yours is open near it '+
+        latestEl.insertAdjacentHTML('beforeend','<div class="secnote">Nothing of yours is open near it '+
           'beforehand either.</div>');
     }
     if(EVENTS_META && EVENTS_META.refreshedAt)
-      listEl.insertAdjacentHTML('beforeend','<div class="foot"><p style="margin:0">Scouted weekly — last refreshed '+
+      latestEl.insertAdjacentHTML('beforeend','<div class="foot"><p style="margin:0">Scouted weekly — last refreshed '+
         esc(new Date(EVENTS_META.refreshedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'}))+'.</p></div>');
     if(!again && typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
     if(again) listEl.scrollTop=keep;
@@ -4248,55 +5092,119 @@ function renderPlan(){
   if(p.type==='anchor'){ if(p.anchor) push(p.anchor.d); p.onward.forEach(o=>push(o.d)); }
   else p.rows.forEach(push);
   cluster.addLayers(live);
-  listEl.appendChild(planBar(p));
+  /* the reply narrates the ASK, not the machinery: with an empty bank, say
+     what discovery is doing about it */
+  if(p.type==='rows' && p.plan && p.plan._clarify && !p.rows.length && S.sug){
+    const n=(S.sug.places||[]).length;
+    if(n) p.plan.reply='Nothing your people have vouched for'+
+      (p.plan._clarify.where?' around '+p.plan._clarify.where:'')+' — but '+
+      n+' real one'+(n===1?' checks':'s check')+' out below.';
+    else if(S.sug.loading) p.plan.reply='Nothing vouched in your bank for that — looking beyond it now…';
+  }
+  latestEl.appendChild(planBar(p));
   if(p.type==='anchor'){
     if(!p.anchor){
-      listEl.insertAdjacentHTML('beforeend',
+      latestEl.insertAdjacentHTML('beforeend',
         '<div class="empty">Nothing in your bank fits that yet.<br>Try naming an area, or fewer conditions.</div>');
-    } else listEl.appendChild(planView(p));
+    } else latestEl.appendChild(planView(p));
     drawAlts(p);
     renderSuggestions();
     if(!again && typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
     if(again) listEl.scrollTop=keep;
     return;
   }
+  /* THE ASK COMES FIRST: with nothing in the bank, verified discovery IS the
+     answer — rendered right here at the top, never a footnote under noise */
+  let sugShown=false;
+  if(p.plan && p.plan._clarify && !p.rows.length && S.sug && !S.sug.idle){
+    renderSuggestions(); sugShown=true;
+  }
+  /* the clarify question is the LAST resort: only once the bank came up
+     empty AND discovery has settled without an answer */
+  if(p.plan && p.plan._clarify && !p.rows.length &&
+     !(S.sug && (S.sug.loading || (S.sug.places||[]).length))){
+    const cl=p.plan._clarify;
+    const say=document.createElement('div'); say.className='saybar';
+    say.style.margin='8px 14px 4px';
+    say.textContent='Your bank holds nothing'+(cl.askedFor?' matching “'+cl.askedFor+'”':' like that')+
+      (cl.where?' around '+cl.where:'')+'.'+
+      (cl.alts.length?' What it DOES hold there: '+cl.alts.map(([c,n])=>c+' ('+n+')').join(', ')+
+        (cl.total>cl.alts.reduce((s,a)=>s+a[1],0)?' and more':'')+'. Which way should I take it?'
+        :' It holds '+cl.total+' places there all the same — want the best of them, or a wider look?');
+    latestEl.appendChild(say);
+    const rowb=document.createElement('div'); rowb.className='optrow';
+    cl.alts.forEach(([c])=>{
+      const b=document.createElement('button'); b.className='optmore';
+      b.textContent=c+(cl.where?' in '+cl.where:'');
+      b.onclick=()=>ask(b.textContent);
+      rowb.appendChild(b);
+    });
+    const anyb=document.createElement('button'); anyb.className='optmore';
+    anyb.textContent='Anything good'+(cl.where?' in '+cl.where:'');
+    anyb.onclick=()=>ask(anyb.textContent);
+    rowb.appendChild(anyb);
+    const wb=document.createElement('button'); wb.className='optmore';
+    wb.textContent='Look beyond my bank';
+    wb.onclick=()=>fetchSuggestions(p.plan.asked||'', p.rows.map(d=>d.n));
+    rowb.appendChild(wb);
+    latestEl.appendChild(rowb);
+  }
   /* what's physically around you comes FIRST — never below 40 far-away rows */
   if(p.nearby && (p.nearby.loading || (p.nearby.places||[]).length)){
-    listEl.insertAdjacentHTML('beforeend',
+    latestEl.insertAdjacentHTML('beforeend',
       '<div class="sechead">Actually near you <span class="badge">Google</span></div>');
     if(p.nearby.loading){
-      listEl.insertAdjacentHTML('beforeend',
+      latestEl.insertAdjacentHTML('beforeend',
         '<div class="loadingrow">Checking what’s physically around you…</div>');
     } else {
-      listEl.insertAdjacentHTML('beforeend',
+      latestEl.insertAdjacentHTML('beforeend',
         '<div class="secnote">Real places around your location — not from your bank, '+
         'nobody you trust has vouched for them.</div>');
-      p.nearby.places.slice(0,5).forEach(pl=>listEl.appendChild(sugCard(pl)));
-      if(p.rows.length) listEl.insertAdjacentHTML('beforeend',
+      if(window.innerWidth<=860 && p.nearby.places.length>1){
+        const nr=document.createElement('div'); nr.className='optrow';
+        p.nearby.places.slice(0,5).forEach(pl=>nr.appendChild(sugCard(pl)));
+        latestEl.appendChild(nr);
+      } else p.nearby.places.slice(0,5).forEach(pl=>latestEl.appendChild(sugCard(pl)));
+      if(p.rows.length) latestEl.insertAdjacentHTML('beforeend',
         '<div class="sechead">From your bank — further out</div>');
     }
   }
   if(S.anchorPlace){
-    listEl.insertAdjacentHTML('beforeend','<div class="sechead">The place you named</div>');
-    listEl.appendChild(sugCard(S.anchorPlace));
+    latestEl.insertAdjacentHTML('beforeend','<div class="sechead">The place you named</div>');
+    latestEl.appendChild(sugCard(S.anchorPlace));
   }
-  if(!items.length && !(p.nearby&&(p.nearby.places||[]).length)){
-    listEl.insertAdjacentHTML('beforeend',
+  if(!items.length && !(p.nearby&&(p.nearby.places||[]).length) && !(p.plan&&p.plan._clarify)){
+    latestEl.insertAdjacentHTML('beforeend',
       '<div class="empty">Nothing in the bank fits that yet.<br>Try widening it, or clear and browse.</div>');
   }
-  const frag=document.createDocumentFragment();
-  p.rows.forEach(d=>frag.appendChild(card(d)));
-  listEl.appendChild(frag);
+  /* on the phone the options are a hand of cards you flick through — a chat
+     answer, not a wall of rows. "As a list" lays them back out vertically. */
+  if(window.innerWidth<=860 && p.rows.length>1 && !p._flat){
+    const row=document.createElement('div'); row.className='optrow';
+    const cap=12;
+    const shown=p.rows.slice(0,cap);
+    shown.forEach(d=>row.appendChild(card(d)));
+    const more=document.createElement('button'); more.className='optmore';
+    more.textContent=p.rows.length>cap ? 'All '+p.rows.length+' as a list' : 'As a list';
+    more.onclick=()=>{ p._flat=true; render(); };
+    row.appendChild(more);
+    latestEl.appendChild(row);
+    trackOptrow(row, shown, d=>d.lat?[d.lat,d.lng]:null);
+  } else {
+    const frag=document.createDocumentFragment();
+    p.rows.forEach(d=>frag.appendChild(card(d)));
+    latestEl.appendChild(frag);
+  }
   drawAlts(null);
   /* club nights ARE late-night answers — surfaced inside the plan, not
      hidden behind knowing to ask "what's on" */
   if(p.nightEvents && p.nightEvents.length){
-    listEl.insertAdjacentHTML('beforeend',
+    latestEl.insertAdjacentHTML('beforeend',
       '<div class="sechead">On that night</div>');
-    p.nightEvents.forEach(e=>listEl.appendChild(evCard(e, p.origin)));
+    p.nightEvents.forEach(e=>latestEl.appendChild(evCard(e, p.origin)));
     drawEventMarkers(p.nightEvents);
   }
-  renderSuggestions();
+  if(!sugShown) renderSuggestions();
   if(!again && typeof applySnap==='function' && window.innerWidth<=860) applySnap(1);
   if(again) listEl.scrollTop=keep;
 }
@@ -4554,17 +5462,10 @@ function askPass(){
    were invisible in the headline even though they were on the map. Now it is
    built from what the bank actually holds — add a source, it names itself. */
 function creditLine(){
-  const has=k=>DATA.some(d=>d.src===k);
-  const bits=[];
-  if(has('sitch')) bits.push('<a href="https://sowhatsthesitch.substack.com" target="_blank" rel="noopener">so what\'s the sitch</a>');
-  if(has('olaloye')) bits.push('Olaloye\'s list');
-  if(has('lamp')) bits.push('Angus\'s list');
-  if(has('insta')) bits.push('Instagram');
-  if(has('mine')) bits.push('your saves');
-  /* the count SPAN must survive the rebuild — it lives inside this line, and
-     replacing the line without it left #bankcount null and froze the number */
-  return '<span id="bankcount">'+DATA.length+'</span> London spots · '+
-    (bits.length>1 ? bits.slice(0,-1).join(', ')+' + '+bits[bits.length-1] : (bits[0]||''));
+  /* one clean line — the sources' full credit lives in the list footer.
+     The count SPAN must survive the rebuild — replacing the line without it
+     left #bankcount null and froze the number. */
+  return '<span id="bankcount">'+DATA.length+'</span> London spots';
 }
 function updateBankCount(){
   const c=creditLine();
@@ -5414,6 +6315,11 @@ function bindSheet(){
     dragging=false; sheet.classList.remove('dragging');
     const dy=(e.changedTouches&&e.changedTouches[0] ? e.changedTouches[0].clientY : y0)-y0;
     const v=dy/Math.max(Date.now()-t0,1);
+    /* already at peek and thrown down AGAIN: that is "done with this chat" —
+       the fresh-start gesture. One motion, no button. */
+    if(snapIdx===0 && dy>50 && (S.plan || chatlog.childNodes.length)){
+      freshChat(); return;
+    }
     let i=snapIdx;
     if(Math.abs(v)>0.5) i = v>0 ? snapIdx-1 : snapIdx+1;      // flick
     else {
@@ -5491,13 +6397,197 @@ layout();
   mw.onclick=e=>{ if(e.target===mw) mw.hidden=true; };
   const ap=document.getElementById('fapply');
   if(ap) ap.onclick=applyFilters;
-  const ba=document.getElementById('browseall');
-  if(ba) ba.onclick=()=>{ mw.hidden=true; S.browse=true; clearPlan();
-    if(typeof applySnap==='function' && window.innerWidth<=860) applySnap(1); };
-  document.getElementById('newchat').onclick=()=>{
-    S.browse=false; clearPlan(); q.value=''; S.q=''; sw.classList.remove('has');
-    toast('Fresh start — ask away'); q.focus();
+  /* library and events unfold INSIDE the drawer — peeking never costs the
+     conversation. Tapping a row opens the place over the map; the chat, the
+     plan, the whole thread stays exactly where it was. */
+  const renderLib=f=>{
+    const box=document.getElementById('liblist');
+    f=(f||'').toLowerCase();
+    const rows=DATA.filter(d=>!f || (d.n+' '+(d.hood||d.area||'')).toLowerCase().includes(f))
+      .sort((a,b)=>a.n.localeCompare(b.n));
+    box.innerHTML='';
+    rows.slice(0,40).forEach(d=>{
+      const b=document.createElement('button'); b.className='librow'; b.type='button';
+      b.innerHTML='<span>'+esc(d.n)+'</span><span class="sub2">'+esc(d.hood||d.area||'')+'</span>';
+      b.onclick=()=>{ mw.hidden=true; openDetail(d,true); };
+      box.appendChild(b);
+    });
+    if(rows.length>40)
+      box.insertAdjacentHTML('beforeend','<div class="libnote">'+(rows.length-40)+
+        ' more — keep typing to narrow it.</div>');
+    if(!rows.length)
+      box.insertAdjacentHTML('beforeend','<div class="libnote">Nothing by that name.</div>');
   };
+  const ba=document.getElementById('browseall');
+  if(ba) ba.onclick=()=>{
+    const lb=document.getElementById('libbox');
+    lb.hidden=!lb.hidden;
+    if(!lb.hidden){ renderLib(document.getElementById('libfind').value); }
+  };
+  const lf=document.getElementById('libfind');
+  if(lf) lf.oninput=()=>renderLib(lf.value);
+  const me2=document.getElementById('menuevents');
+  if(me2) me2.onclick=()=>{
+    const eb=document.getElementById('evbox');
+    eb.hidden=!eb.hidden;
+    if(eb.hidden) return;
+    eb.innerHTML='';
+    const up=(EVENTS||[]).filter(e=>Date.parse(e.start)>=Date.now()-6*3600e3)
+      .sort((a,b)=>Date.parse(a.start)-Date.parse(b.start)).slice(0,30);
+    if(!up.length){ eb.innerHTML='<div class="libnote">Nothing scouted yet — the feed fills weekly.</div>'; return; }
+    up.forEach(e=>{
+      const d=new Date(e.start);
+      const b=document.createElement('button'); b.className='librow'; b.type='button';
+      b.innerHTML='<span><b>'+esc(d.toLocaleDateString('en-GB',{weekday:'short', day:'numeric'}))+'</b> '+
+        esc(e.title||'')+'</span><span class="sub2">'+esc(e.venue||e.area||'')+'</span>';
+      b.onclick=()=>{ mw.hidden=true; openEventDetail(e); };
+      eb.appendChild(b);
+    });
+  };
+  const mt=document.getElementById('menutrips');
+  if(mt) mt.onclick=()=>{ const tb=document.getElementById('tripbox'); if(tb) tb.hidden=!tb.hidden; };
+  /* the filter machinery folds away behind one pill — the drawer stays clean */
+  const mf=document.getElementById('menufilters');
+  if(mf) mf.onclick=()=>{ const s2=document.getElementById('mslot2');
+    s2.hidden=!s2.hidden; mf.setAttribute('aria-expanded', String(!s2.hidden)); };
+  /* the + beside the chat ADDS KNOWLEDGE — an Instagram post, a source the
+     scout reads weekly. A fresh chat lives in here too, not on the main key. */
+  const aw=document.getElementById('addwrap');
+  const ab2=document.getElementById('addbtn');
+  if(ab2) ab2.onclick=()=>{ aw.hidden=false; };
+  if(aw) aw.onclick=e=>{ if(e.target===aw) aw.hidden=true; };
+  /* every sheet answers the same gesture: swipe it down, it goes away */
+  (function(){
+    const box=aw && aw.querySelector('.addbox');
+    if(!box) return;
+    let y0=null, dy=0, on=false;
+    box.addEventListener('touchstart',e=>{
+      y0=e.touches[0].clientY; dy=0; on=true; box.style.transition='none';
+    },{passive:true});
+    box.addEventListener('touchmove',e=>{
+      if(!on) return;
+      dy=Math.max(0, e.touches[0].clientY-y0);
+      box.style.transform='translateY('+dy+'px)';
+    },{passive:true});
+    const done=()=>{
+      if(!on) return; on=false;
+      box.style.transition='';
+      if(dy>80){ aw.hidden=true; }
+      box.style.transform='';
+    };
+    box.addEventListener('touchend',done);
+    box.addEventListener('touchcancel',done);
+  })();
+  const ai2=document.getElementById('addig2');
+  if(ai2) ai2.onclick=()=>{ aw.hidden=true; openInstaSheet(); };
+  const asb=document.getElementById('addsrcbtn');
+  if(asb) asb.onclick=()=>{ const sb=document.getElementById('srcbox');
+    sb.hidden=!sb.hidden; if(!sb.hidden) document.getElementById('srcurl').focus(); };
+  const sg=document.getElementById('srcgo');
+  if(sg) sg.onclick=async()=>{
+    const inp=document.getElementById('srcurl');
+    const url=(inp.value||'').trim();
+    if(!/^https:\/\/\S{4,}/.test(url)){ toast('That needs to be a full https:// link'); return; }
+    let pass=localStorage.getItem(PASSKEY);
+    if(!pass){ pass=await askPass(); if(!pass) return; }
+    sg.disabled=true;
+    try{
+      let j=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'addsource', pass, url})}).then(r=>r.json());
+      if(j && j.error==='bad_pass'){
+        localStorage.removeItem(PASSKEY);
+        const again=await askPass();
+        if(again){ pass=again;
+          j=await fetch('/api/events',{method:'POST',headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({action:'addsource', pass, url})}).then(r=>r.json()); }
+      }
+      if(j && j.ok){ localStorage.setItem(PASSKEY, pass); inp.value=''; aw.hidden=true;
+        toast('Taught. The scout reads it every Thursday from now on — '+j.sources+' source'+(j.sources===1?'':'s')+' total.'); }
+      else toast('Could not teach that one'+(j&&j.error?' ('+j.error+')':'')+'.');
+    }catch(e){ toast('No connection — try again in a moment.'); }
+    sg.disabled=false;
+  };
+  /* follow a DJ: probe their usual homes, show what was found, let the human
+     confirm — then the scout reads their page weekly and their gigs land in
+     the feed with their name on them */
+  const withPass=async(fn)=>{
+    let pass=localStorage.getItem(PASSKEY);
+    if(!pass){ pass=await askPass(); if(!pass) return null; }
+    let j=await fn(pass);
+    if(j && j.error==='bad_pass'){
+      localStorage.removeItem(PASSKEY);
+      const again=await askPass(); if(!again) return null;
+      pass=again; j=await fn(pass);
+    }
+    if(j && !j.error) localStorage.setItem(PASSKEY, pass);
+    return j;
+  };
+  const evPost=(payload)=>fetch('/api/events',{method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}).then(r=>r.json());
+  const djb=document.getElementById('adddjbtn');
+  if(djb) djb.onclick=()=>{ const db=document.getElementById('djbox');
+    db.hidden=!db.hidden; if(!db.hidden) document.getElementById('djname').focus(); };
+  const djgo=document.getElementById('djgo');
+  if(djgo) djgo.onclick=async()=>{
+    const name=(document.getElementById('djname').value||'').trim();
+    const url=(document.getElementById('djurl').value||'').trim();
+    const hits=document.getElementById('djhits');
+    if(name.length<2){ toast('Give me the DJ’s name first'); return; }
+    djgo.disabled=true; hits.innerHTML='<p class="msub">Knocking on their usual doors…</p>';
+    const j=await withPass(pass=>evPost({action:'djprobe', pass, name, url:url||undefined}));
+    djgo.disabled=false;
+    if(!j || !j.ok){ hits.innerHTML='<p class="msub">Could not check just now'+(j&&j.error?' ('+esc(j.error)+')':'')+'.</p>'; return; }
+    const found=(j.candidates||[]).filter(c=>c.ok);
+    if(!found.length){
+      hits.innerHTML='<p class="msub">Nothing answered at the usual addresses. If you have their page, paste the link above and press Find again.</p>';
+      return;
+    }
+    hits.innerHTML='';
+    found.forEach(c=>{
+      const b=document.createElement('button'); b.className='mbrowse'; b.type='button';
+      const host=c.url.replace(/^https:\/\/(www\.)?/,'').split('/')[0];
+      b.innerHTML='<b>'+esc(c.title||host)+'</b><span class="msub">'+esc(host)+
+        (c.mentions?' · mentions '+esc(name):' · does NOT mention '+esc(name)+' — probably not them')+'</span>';
+      b.onclick=async()=>{
+        b.disabled=true;
+        const f=await withPass(pass=>evPost({action:'follow', pass, name, url:c.url}));
+        b.disabled=false;
+        if(f && f.ok){ aw.hidden=true; document.getElementById('djname').value='';
+          document.getElementById('djurl').value=''; hits.innerHTML='';
+          toast('Following '+name+' — the Thursday scout reads that page weekly now.'); }
+        else toast('Could not follow'+(f&&f.error?' ('+f.error+')':'')+'.');
+      };
+      hits.appendChild(b);
+    });
+    hits.insertAdjacentHTML('beforeend',
+      '<p class="msub">Tap the one that is actually them. Pages that don’t mention the name are almost certainly someone else.</p>');
+  };
+  document.getElementById('newchat').onclick=()=>{ aw.hidden=true; freshChat(); q.focus(); };
+  /* attach a photo: the AI reads it — a flyer, a storefront, a screenshot —
+     and either acts on what it sees or asks the one question it needs */
+  const aph=document.getElementById('addphoto'), pin=document.getElementById('photoin');
+  if(aph) aph.onclick=()=>pin.click();
+  if(pin) pin.onchange=async()=>{
+    const f=pin.files && pin.files[0]; pin.value='';
+    if(!f) return;
+    aw.hidden=true;
+    let dataUrl;
+    try{ dataUrl=await shrinkImage(f, 1280); }
+    catch(e){ toast('Could not read that image.'); return; }
+    askPhoto(dataUrl);
+  };
+  /* the drawer answers the same language it opened with: swipe it away */
+  const menuEl=mw.querySelector('.menu');
+  if(menuEl){
+    let x0=null;
+    menuEl.addEventListener('touchstart',e=>{ x0=e.touches[0].clientX; },{passive:true});
+    menuEl.addEventListener('touchend',e=>{
+      if(x0==null) return;
+      const dx=(e.changedTouches[0]?e.changedTouches[0].clientX:x0)-x0;
+      if(dx<-60) mw.hidden=true;
+      x0=null;
+    });
+  }
   if(window.visualViewport){
     const vv=window.visualViewport;
     const upd=()=>{
@@ -5516,10 +6606,12 @@ render();
 drawPrompts();
 homeView();
 locate(true);
-loadSaved();          // whatever you saved on any device
 loadEvents();         // what's on — scouted weekly into the feed
-loadLamp();           // Angus's places, as the importer resolves them
-postRoster();         // tell the understanding engine what the bank holds
+/* The roster must describe the bank AFTER the other stores have merged in.
+   These were fired side by side and postRoster read DATA immediately — so the
+   understanding engine was told about ~520 places and NEVER heard about
+   Angus's 284. Its universe sat at 505 and it declared itself complete. */
+Promise.allSettled([loadSaved(), loadLamp()]).then(postRoster);
 </script>
 </body>
 </html>

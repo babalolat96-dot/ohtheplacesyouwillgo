@@ -7,13 +7,19 @@ const KEY_NAMES = [
 ];
 
 function findKey() {
+  // A name can lie: netlify dev injects its own ANTHROPIC_API_KEY (a gateway
+  // token, not an Anthropic key) which 401s. Prefer whatever actually LOOKS
+  // like an Anthropic key, wherever it lives; named-but-odd only as last resort.
+  for (const n of KEY_NAMES) {
+    const v = process.env[n];
+    if (v && /^sk-ant-/.test(v.trim())) return v.trim();
+  }
+  for (const [k, v] of Object.entries(process.env)) {
+    if (typeof v === 'string' && /^sk-ant-/.test(v.trim())) return v.trim();
+  }
   for (const n of KEY_NAMES) {
     const v = process.env[n];
     if (v && v.trim()) return v.trim();
-  }
-  // last resort: any env value that looks like an Anthropic key
-  for (const [k, v] of Object.entries(process.env)) {
-    if (typeof v === 'string' && /^sk-ant-/.test(v.trim())) return v.trim();
   }
   return null;
 }
@@ -119,6 +125,126 @@ Rules:
   what after", "night out in Dalston". Set it false for an immediate single need:
   "coffee near me", "I want a drink now", "closest pub".`;
 
+/* A follow-up can be a question ABOUT the options on screen — "which one for a
+   first date?", "the second one", "which is cosiest?" — rather than a new
+   search. Then the answer is a ranked pick among those names, nothing else. */
+const PICK = {
+  name: 'pick',
+  description: 'Answer a question about the options currently shown, by ranking or choosing among them.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      names: { type: 'array', items: { type: 'string' },
+        description: 'The shown option names, best answer first. Only names from the list, verbatim. One name for "the second one"; a ranked list for a comparison.' },
+      reply: { type: 'string',
+        description: 'One or two short sentences answering the question in plain words. If you cannot honestly judge from what you know, say so plainly — never bluff.' },
+    },
+    required: ['names', 'reply'],
+  },
+};
+
+/* Some follow-ups are neither a request nor a pick — they are the user
+   TALKING BACK: a challenge, a doubt, a why. Those deserve words, not a
+   fresh list dressed up as an answer. */
+const SAY = {
+  name: 'say',
+  description: 'A conversational reply about the answer already on screen, when neither a new plan nor a pick fits — a challenge, a doubt, a "why".',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reply: { type: 'string',
+        description: 'Two or three plain sentences, honest and specific, using only the conversation and the options list as facts. If they doubt something the options disprove, point at the options by name. If they doubt something you cannot verify, concede what you do not know.' },
+    },
+    required: ['reply'],
+  },
+};
+
+const SAYRULES = `If the follow-up is not a request at all — a challenge
+("that's impossible", "are you sure?"), a doubt, or a question about WHY the
+answer looks the way it does — use the say tool and answer it honestly from
+the conversation and the options on screen. Example: told "my bank has
+nothing in Dalston? impossible" while the options list shows Dalston places,
+name two of them and explain what the earlier reply actually meant. Never
+respond to a complaint with a new search.
+Also use say when the request is genuinely AMBIGUOUS — two readings that lead
+to different answers ("somewhere fun" with no other signal, a place name that
+is also an area). Ask ONE short clarifying question, the way a person would,
+instead of guessing silently.`;
+
+const PICKRULES = `The user is LOOKING AT a list of options (supplied as JSON).
+If the follow-up is a question about those options — which to pick, how they
+compare, "the first one", "which is best for X" — answer with the pick tool:
+names from the list verbatim, best first, and a short honest reply. Never
+invent facts about a venue; if you do not know, say so in the reply and keep
+the order unchanged. If the follow-up is instead a new or changed REQUEST
+(different kind of place, new area, new constraints), use the plan tool.`;
+
+/* A question ABOUT one venue ("how many people is it good for?") wants an
+   ANSWER, not a plan. The page sends everything the app knows about the place
+   — the writer's words, the review-read understanding, the venue-site read,
+   hours — and the model answers from that knowledge alone. */
+const ANSWER = {
+  name: 'answer',
+  description: 'A direct answer about one venue, from the supplied knowledge only.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      reply: { type: 'string',
+        description: 'One to three short sentences answering the question. If the knowledge does not contain the answer, say that plainly and give the nearest fact it DOES contain. Never invent hours, prices, capacity or policies.' },
+      grounded: { type: 'boolean',
+        description: 'True only when the reply is supported by the supplied knowledge rather than general assumption.' },
+    },
+    required: ['reply', 'grounded'],
+  },
+};
+
+const ABOUTRULES = `You answer ONE question about ONE London venue, using ONLY
+the knowledge supplied as JSON ("about") and what it directly implies. If the
+knowledge does not contain the answer, say so plainly and offer the nearest
+useful fact it DOES contain. Never invent hours, prices, capacity, bookings or
+policies. Answer in plain words, no greeting, no filler.`;
+
+/* A photo attached to the chat: say what it shows — venue names, an event,
+   a list — or ask the ONE question needed. The page acts on the names. */
+const SEEN = {
+  name: 'seen',
+  description: 'What an attached photo shows, for a London going-out app.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      kind: { type: 'string', enum: ['flyer', 'place', 'menu', 'list', 'screenshot', 'other', 'unreadable'],
+        description: 'What the photo is.' },
+      venues: { type: 'array', items: { type: 'string' },
+        description: 'Venue names actually visible in the image, verbatim. Empty if none are readable.' },
+      event: { type: 'object', properties: {
+          title: { type: 'string' }, date: { type: 'string' }, time: { type: 'string' } },
+        description: 'If it is an event flyer: the event name and any date/time printed on it, verbatim.' },
+      reply: { type: 'string',
+        description: 'One or two short sentences: what you can see and what you did with it — or, if you cannot make enough out, ONE specific question that would unlock it. Never pretend to read what is not legible.' },
+    },
+    required: ['kind', 'reply'],
+  },
+};
+
+const SEENRULES = `You are reading a photo someone attached in a London
+going-out app — usually an event flyer, a venue storefront, a menu, or a
+screenshot of a list of places. Report ONLY what is actually legible in the
+image: names verbatim, dates verbatim. If it is too unclear to act on, set
+kind "unreadable" and make reply the one specific question that would help
+("Whereabouts was this taken?", "What's the name on the front?"). Never
+invent a name or a date.`;
+
+/* When a place card is open on screen, that place is the subject of anything
+   said with "it", "here", "this place" — the map context the user acts in. */
+const FOCUSRULES = `The user has a place OPEN ON SCREEN right now, supplied as JSON as "focus".
+Anything said with "it", "its", "here", "there", "this place" — or with no
+other subject at all — is about that place:
+- "what's good around it" / "where to after" -> venues [that name], anchorIsVenue true, plus the stop they asked for.
+- "is it open late" / "when does it close" -> venues [that name], anchorIsVenue true, one stop kind "any".
+- "how do I get there" -> venues [that name], anchorIsVenue true.
+Never swap the focus place for somewhere they did not name. If they clearly
+name a DIFFERENT place or area, that wins and focus is ignored.`;
+
 const MERGE = `This message is a FOLLOW-UP to an earlier request, supplied as JSON.
 Return the COMPLETE merged query: keep every field from the earlier request that
 the follow-up does not change, and change only what it asks to change.
@@ -137,7 +263,7 @@ exports.handler = async (event) => {
   if (event.httpMethod !== 'POST')
     return { statusCode: 405, headers, body: JSON.stringify({ error: 'POST only' }) };
 
-  let q = '', prev = null;
+  let q = '', prev = null, options = null, conv = null, focus = null, about = null, image = null;
   try {
     const body = JSON.parse(event.body || '{}');
     q = (body.q || '').toString().slice(0, 400);
@@ -146,8 +272,41 @@ exports.handler = async (event) => {
       const s = JSON.stringify(body.prev);
       if (s.length <= 2000) prev = s;
     }
+    // what is on screen: names only, so "which one" has a referent
+    if (Array.isArray(body.options) && body.options.length) {
+      options = body.options.slice(0, 12).map(o => ({
+        name: String(o.name || '').slice(0, 80),
+        kind: String(o.kind || '').slice(0, 20),
+        area: String(o.area || '').slice(0, 40),
+      })).filter(o => o.name);
+      if (!options.length) options = null;
+    }
+    // the last few conversational turns, for pronouns and drift
+    if (Array.isArray(body.conv) && body.conv.length) {
+      conv = body.conv.slice(-8).map(t => ({
+        role: t.role === 'assistant' ? 'assistant' : 'user',
+        text: String(t.text || '').slice(0, 200),
+      }));
+    }
+    // the place card open on screen: the subject of "it" and "here"
+    if (body.focus && typeof body.focus === 'object' && body.focus.name) {
+      focus = { name: String(body.focus.name).slice(0, 80),
+        kind: String(body.focus.kind || '').slice(0, 20),
+        area: String(body.focus.area || '').slice(0, 40) };
+    }
+    // everything the app knows about one place, for a direct answer
+    if (body.about && typeof body.about === 'object' && body.about.name) {
+      const s = JSON.stringify(body.about);
+      if (s.length <= 6000) about = s;
+    }
+    // an attached photo, already shrunk client-side
+    if (body.image && typeof body.image === 'object' && typeof body.image.data === 'string') {
+      const mt = String(body.image.media_type || 'image/jpeg');
+      if (/^image\/(jpeg|png|webp|gif)$/.test(mt) && body.image.data.length <= 2000000)
+        image = { data: body.image.data, media_type: mt };
+    }
   } catch (e) {}
-  if (!q.trim()) return { statusCode: 400, headers, body: JSON.stringify({ error: 'empty' }) };
+  if (!q.trim() && !image) return { statusCode: 400, headers, body: JSON.stringify({ error: 'empty' }) };
 
   const key = findKey();
   if (!key)
@@ -156,6 +315,67 @@ exports.handler = async (event) => {
 
   try {
     const model = await pickModel(key);
+
+    /* photo-mode: read the attached image and report what is actually there */
+    if (image) {
+      const ri = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01',
+          'content-type': 'application/json' },
+        body: JSON.stringify({
+          model, max_tokens: 500,
+          system: SEENRULES,
+          tools: [SEEN],
+          tool_choice: { type: 'tool', name: 'seen' },
+          messages: [{ role: 'user', content: [
+            { type: 'image', source: { type: 'base64', media_type: image.media_type, data: image.data } },
+            { type: 'text', text:
+              (conv && conv.length
+                ? 'Conversation so far:\n' + conv.map(t => (t.role === 'user' ? 'They said: ' : 'You showed: ') + t.text).join('\n') + '\n\n'
+                : '')
+              + (q.trim() ? 'They attached this photo and said: ' + q : 'They attached this photo. What is it?') } ] }],
+        }),
+      });
+      const di = await ri.json();
+      if (!ri.ok)
+        return { statusCode: 200, headers, body: JSON.stringify({
+          error: 'api', status: ri.status, detail: (di.error && di.error.message) || '', model }) };
+      const bi = (di.content || []).find(c => c.type === 'tool_use');
+      if (!bi)
+        return { statusCode: 200, headers, body: JSON.stringify({ error: 'no_read', model }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ seen: bi.input, model }) };
+    }
+
+    /* about-mode: a question about one place gets an answer from the app's
+       own knowledge — a completely different contract from planning */
+    if (about) {
+      const r0 = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': key, 'anthropic-version': '2023-06-01',
+          'content-type': 'application/json' },
+        body: JSON.stringify({
+          model, max_tokens: 400,
+          system: ABOUTRULES,
+          tools: [ANSWER],
+          tool_choice: { type: 'tool', name: 'answer' },
+          messages: [{ role: 'user', content:
+            (conv && conv.length
+              ? 'Conversation so far:\n' + conv.map(t => (t.role === 'user' ? 'They said: ' : 'You showed: ') + t.text).join('\n') + '\n\n'
+              : '')
+            + 'Everything the app knows about the place (JSON): ' + about
+            + '\nQuestion: ' + q }],
+        }),
+      });
+      const d0 = await r0.json();
+      if (!r0.ok)
+        return { statusCode: 200, headers, body: JSON.stringify({
+          error: 'api', status: r0.status, detail: (d0.error && d0.error.message) || '', model }) };
+      const b0 = (d0.content || []).find(c => c.type === 'tool_use');
+      if (!b0)
+        return { statusCode: 200, headers, body: JSON.stringify({ error: 'no_answer', model }) };
+      return { statusCode: 200, headers, body: JSON.stringify({ answer: b0.input, model }) };
+    }
+
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -166,11 +386,21 @@ exports.handler = async (event) => {
       body: JSON.stringify({
         model,
         max_tokens: 600,
-        system: prev ? SYSTEM + '\n\n' + MERGE : SYSTEM,
-        tools: [SCHEMA],
-        tool_choice: { type: 'tool', name: 'plan' },
-        messages: [{ role: 'user', content: prev
-          ? 'Earlier request (JSON): ' + prev + '\nFollow-up: ' + q
+        system: (prev
+          ? SYSTEM + '\n\n' + MERGE + (options ? '\n\n' + PICKRULES : '') + '\n\n' + SAYRULES
+          : SYSTEM) + (focus ? '\n\n' + FOCUSRULES : ''),
+        tools: prev ? [SCHEMA, ...(options ? [PICK] : []), SAY] : [SCHEMA],
+        // in a follow-up the model chooses WHICH tool answers (plan / pick /
+        // just talking); a fresh ask is forced to produce a plan as before
+        tool_choice: prev ? { type: 'any' } : { type: 'tool', name: 'plan' },
+        messages: [{ role: 'user', content: (prev || focus || (conv && conv.length))
+          ? (conv && conv.length
+              ? 'Conversation so far:\n' + conv.map(t => (t.role === 'user' ? 'They said: ' : 'You showed: ') + t.text).join('\n') + '\n\n'
+              : '')
+            + (prev ? 'Earlier request (JSON): ' + prev + '\n' : '')
+            + (options ? 'Options on screen (JSON): ' + JSON.stringify(options) + '\n' : '')
+            + (focus ? 'Place open on screen (JSON): ' + JSON.stringify(focus) + '\n' : '')
+            + (prev ? 'Follow-up: ' : 'Request: ') + q
           : q }],
       }),
     });
@@ -181,6 +411,10 @@ exports.handler = async (event) => {
     const block = (d.content || []).find(c => c.type === 'tool_use');
     if (!block)
       return { statusCode: 200, headers, body: JSON.stringify({ error: 'no_plan', model }) };
+    if (block.name === 'pick')
+      return { statusCode: 200, headers, body: JSON.stringify({ pick: block.input, model }) };
+    if (block.name === 'say')
+      return { statusCode: 200, headers, body: JSON.stringify({ say: block.input, model }) };
     return { statusCode: 200, headers, body: JSON.stringify({ plan: block.input, model }) };
   } catch (e) {
     return { statusCode: 200, headers, body: JSON.stringify({ error: 'exception', detail: String(e) }) };

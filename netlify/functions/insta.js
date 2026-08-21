@@ -10,12 +10,18 @@ const KEY_NAMES = [
 const G_KEY_NAMES = ['GOOGLE_PLACES_KEY', 'GOOGLE_PLACES_API_KEY', 'GOOGLE_API_KEY', 'PLACES_KEY'];
 
 function findKey() {
+  // netlify dev injects a non-Anthropic ANTHROPIC_API_KEY: prefer whatever
+  // actually looks like an Anthropic key; named-but-odd only as last resort
   for (const n of KEY_NAMES) {
     const v = process.env[n];
-    if (v && v.trim()) return v.trim();
+    if (v && /^sk-ant-/.test(v.trim())) return v.trim();
   }
   for (const v of Object.values(process.env)) {
     if (typeof v === 'string' && /^sk-ant-/.test(v.trim())) return v.trim();
+  }
+  for (const n of KEY_NAMES) {
+    const v = process.env[n];
+    if (v && v.trim()) return v.trim();
   }
   return null;
 }

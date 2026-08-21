@@ -196,6 +196,11 @@ export default async (req) => {
   const read = async (k, d) => { try { const v = await store.get(k, { type: 'json' }); return v ?? d; } catch (e) { return d; } };
   const done = await read(KEY, {});
   const saved = await read('saved-v1', []);
+  /* Belt and braces on the roster race: Angus's resolved London places live in
+     their own store, so read them directly. Then the engine converges even if
+     the app is never opened and no roster is ever posted. editorial.mjs always
+     did this; enrich did not, which is half of why 284 places went unread. */
+  const lamp = await read('lamp-v1', []);
   const queue = await read(QKEY, []);
 
   /* The universe to understand: the baked bank ships inside index.html, so the
@@ -213,6 +218,7 @@ export default async (req) => {
   };
   (Array.isArray(body.places) ? body.places : []).forEach(push);
   (Array.isArray(saved) ? saved : []).forEach(push);
+  (Array.isArray(lamp) ? lamp : []).forEach(push);
   (Array.isArray(roster) ? roster : []).forEach(push);
 
   if (body.action === 'roster') {

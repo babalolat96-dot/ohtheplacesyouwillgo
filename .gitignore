@@ -1,0 +1,9 @@
+.DS_Store
+UPLOAD-ME.txt
+
+# Local Netlify folder
+.netlify
+dev-server.sh
+node_modules/
+package-lock.json
+deno.lock
