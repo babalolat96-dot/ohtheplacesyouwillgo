@@ -7498,7 +7498,10 @@ layout();
     aw.hidden=true;
     pushBotSay('Checking who you follow…');
     let j=null; try{ j=await evPost({action:'list'}); }catch(e){}
-    const fl=(j && Array.isArray(j.follows))?j.follows:[];
+    let fl=(j && Array.isArray(j.follows))?j.follows:[];
+    /* one DJ can be followed at several pages — the tab shows the PERSON once */
+    const seen={}; fl=fl.filter(f=>{ const k=(f.name||'').toLowerCase();
+      if(!k || seen[k]) return false; seen[k]=1; return true; });
     if(!fl.length){
       pushBotSay('You aren’t following any DJs yet. Open + → “Follow a DJ”, give me a name, and from then on the Thursday scout reads their page weekly — and they’ll show up here.');
       return;
@@ -7551,7 +7554,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='2:32 pm, 21 Aug';
+  const BUILT='2:38 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
