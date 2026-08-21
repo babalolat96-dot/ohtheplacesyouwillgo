@@ -4656,10 +4656,69 @@ async function ask(text, fresh){
     return;
   }
 
+  /* -------- "somewhere to watch the arsenal match" — screens, not sources --
+     Google knows every pub with a screen; the bank doesn't have to. */
+  const SPORTWORDS=/\b(match|game|footy|football|rugby|boxing|ufc|cricket|f1|grand prix|darts|premier league|champions league|world cup|euros)\b/i;
+  const TEAMWORDS=/\b(arsenal|spurs|tottenham|chelsea|liverpool|everton|west ham|fulham|brentford|crystal palace|man(?:chester)?\s*(?:united|city)|england)\b/i;
+  const sportHit=(/\b(watch|screen\w*|show(?:ing|s)?)\b/i.test(text) && (SPORTWORDS.test(text)||TEAMWORDS.test(text)))
+    || /\bsports?\s+(bar|pub)\b/i.test(text)
+    || (/\b(pub|bar)\b/i.test(text) && /\bscreens?\b/i.test(text));
+  if(sportHit){
+    const near=S.me||(map?[map.getCenter().lat,map.getCenter().lng]:null);
+    if(!near){ pushBotSay('Tap the locate button (or name an area) and I’ll find the pubs with screens around it.'); return; }
+    const team=(text.match(TEAMWORDS)||[])[0];
+    pushBotSay('Hunting for screens'+(team?' for the '+team+' game':'')+' — pubs and sports bars near '+(S.me?'you':'the map')+'…');
+    try{
+      const j=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({q:'sports pub showing live football', keyword:true, lat:near[0], lng:near[1]})}).then(r=>r.json());
+      const pl=(j&&j.places)||[];
+      if(pl.length){
+        pl.forEach(p=>{ p.why=p.why||'Shows live sport — tap the card, “Open in Maps” has today’s details.'; });
+        pushBotSay(pl.length+' place'+(pl.length===1?'':'s')+' that show the game, nearest first. I don’t hold fixture times, so check kick-off — but these have the screens.');
+        pushBotSugs(pl);
+      } else pushBotSay('Google gave me nothing for sports screens around there — try naming an area with more pubs.');
+    }catch(e){ pushBotSay('Couldn’t reach the map search just now.'); }
+    return;
+  }
+
+  /* -------- "where can I watch spiderman today" — the big screens ---------
+     Cinemas get the same treatment as dinner: real places, pins, distance.
+     Honesty: no showtimes feed yet, so each card hands to its own listings. */
+  const filmQ=(!SPORTWORDS.test(text) && !TEAMWORDS.test(text)) &&
+    (text.match(/\bwhere\s+can\s+(?:i|we)\s+(?:watch|see|catch)\s+(.{2,40}?)(?:\s+(?:today|tonight|tomorrow|this\s+week(?:end)?))?\s*[?.!]*$/i)
+     || (/\b(cinema|movie|film)s?\b/i.test(text)
+         && text.match(/\b(?:watch|see|catch|showing)\s+(.{2,40}?)(?:\s+(?:today|tonight|tomorrow|this\s+week(?:end)?))?\s*[?.!]*$/i)));
+  const cinemaAsk=/\b(cinemas?|movie theat|showtimes?|film times)\b/i.test(text) && /\b(near|around|close|where|any|good)\b/i.test(text);
+  if(filmQ || cinemaAsk){
+    const film=filmQ?filmQ[1].replace(/^(the\s+new\s+|the\s+|a\s+|new\s+)/i,'').trim():null;
+    const near=S.me||(map?[map.getCenter().lat,map.getCenter().lng]:null);
+    if(!near){ pushBotSay('Tap the locate button (or name an area) and I’ll line up the cinemas around it.'); return; }
+    pushBotSay(film?('Checking the big screens near '+(S.me?'you':'the map')+' for '+film+'…')
+                   :('Lining up the cinemas near '+(S.me?'you':'the map')+'…'));
+    try{
+      const j=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({q:'cinema', keyword:true, lat:near[0], lng:near[1]})}).then(r=>r.json());
+      const pl=((j&&j.places)||[]).filter(p=>/movie|cinema|theater/i.test(String(p.type||'')));
+      if(pl.length){
+        pl.forEach(p=>{ p.why=(film?('For '+film+': '):'')+'tap the card — “Open in Maps” carries today’s showtimes and tickets.'; });
+        pushBotSay('The '+pl.length+' nearest cinema'+(pl.length===1?'':'s')+
+          (film?' that could be showing '+film:'')+', nearest first. Straight truth: I can’t see per-film showtimes yet'+
+          (film?' so I can’t promise '+film+' is on':'')+' — each card’s “Open in Maps” shows today’s times and tickets. One free listings key and I can put the times right here.');
+        pushBotSugs(pl);
+      } else pushBotSay('No cinemas answered around there — try a bigger area.');
+    }catch(e){ pushBotSay('Couldn’t reach the map search just now.'); }
+    return;
+  }
+
   /* -------- teaching the scout, in plain words --------
      "follow this" + a link, "add apartment life to the scrape" — the weekly
-     reading list grows from the conversation, not just the + sheet. */
-  if(/\b(follow|scrape|track|watch|add)\b/i.test(text) &&
+     reading list grows from the conversation, not just the + sheet.
+     "watch"/"add" alone are NOT teaching words ("watch the arsenal match"
+     is a pub hunt): they need a source word or a link beside them. */
+  const teachStrong=/\b(follow|scrape|track)\b/i.test(text);
+  const teachWeak=/\b(watch|add)\b/i.test(text) &&
+    (/\b(scrape|scraping|source|sources|weekly|feed)\b/i.test(text) || /https?:\/\//i.test(text));
+  if((teachStrong||teachWeak) &&
      /\b(scrape|scraping|source|sources|weekly|feed|watch|follow|track)\b/i.test(text) &&
      !/\bunfollow\b/i.test(text)){
     const urlM=text.match(/https?:\/\/\S{6,}/i);
@@ -5370,6 +5429,17 @@ function pushBotChoice(said, opts){
     rowb.appendChild(b);
   });
   chatlog.appendChild(rowb);
+  requestAnimationFrame(()=>{ listEl.scrollTop=listEl.scrollHeight; });
+}
+/* ...and with a hand of DISCOVERY cards — Google-found places, same swipe,
+   same tap-for-detail, pins on the map behind. Sports pubs, cinemas, leads. */
+function pushBotSugs(places){
+  const row=document.createElement('div'); row.className='optrow';
+  row.style.cssText='padding:0 14px 8px';
+  places.slice(0,8).forEach(p=>row.appendChild(sugCard(p)));
+  chatlog.appendChild(row);
+  trackOptrow(row, places.slice(0,8), p=>p.lat?[p.lat,p.lng]:null);
+  drawSugMarkers(places.slice(0,8));
   requestAnimationFrame(()=>{ listEl.scrollTop=listEl.scrollHeight; });
 }
 /* the bot can answer WITH a hand of event cards — same cards, same swipe,
@@ -7618,7 +7688,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='4:00 pm, 21 Aug';
+  const BUILT='4:37 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
