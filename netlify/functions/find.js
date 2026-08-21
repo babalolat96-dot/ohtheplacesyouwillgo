@@ -211,6 +211,48 @@ exports.handler = async (event) => {
     }
   }
 
+  // keyword mode: "nigerian restaurant" AROUND a point is a category hunt,
+  // not a name lookup — the name filter below would strangle it (Jollof City
+  // serves Nigerian food without "nigerian" in its name). Here the TYPE gate
+  // does the vetting and DISTANCE does the ranking, with the search radius
+  // breathing outward until something real answers.
+  if (body.keyword && qRaw && near) {
+    try {
+      const out = [], seen = new Set();
+      for (const radius of [4000, 10000, 20000]) {
+        const res = await searchText(key, qRaw,
+          { circle: { center: { latitude: near.lat, longitude: near.lng }, radius } });
+        for (const p of (res.places || [])) {
+          if (!p || !p.id || seen.has(p.id)) continue;
+          seen.add(p.id);
+          if (!inLondon(p)) continue;
+          if (p.businessStatus && p.businessStatus !== 'OPERATIONAL') continue;
+          if (!isVenue(p)) continue;
+          out.push({
+            id: p.id,
+            name: (p.displayName || {}).text || '',
+            address: p.shortFormattedAddress || p.formattedAddress || null,
+            lat: p.location.latitude, lng: p.location.longitude,
+            kind: kindOf(p), type: p.primaryType || null,
+            rating: p.rating || null, ratingCount: p.userRatingCount || null,
+            open: (p.currentOpeningHours && typeof p.currentOpeningHours.openNow === 'boolean')
+              ? p.currentOpeningHours.openNow : null,
+            via: 'google',
+          });
+        }
+        if (out.length >= 3) break;
+      }
+      // squared degrees with the longitude squeezed for London's latitude —
+      // plenty for RANKING by closeness
+      const d2 = a => (a.lat - near.lat) ** 2 + ((a.lng - near.lng) * 0.62) ** 2;
+      out.sort((a, b) => d2(a) - d2(b));
+      return { statusCode: 200, headers,
+        body: JSON.stringify({ places: out.slice(0, 8), considered: seen.size }) };
+    } catch (e) {
+      return { statusCode: 200, headers, body: JSON.stringify({ places: [], error: 'exception', detail: String(e) }) };
+    }
+  }
+
   if (!qRaw) return { statusCode: 400, headers, body: JSON.stringify({ error: 'empty' }) };
 
   const bias = near

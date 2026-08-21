@@ -3212,10 +3212,14 @@ function runPlan(plan){
      magic phrase. BUT a constrained ask ("georgian food") must never be
      answered with whatever happens to be nearby — a chicken shop is not
      Georgian food. Discovery (which honours the constraint) answers those. */
-  const constrained=!!(plan._clarify ||
-    (plan.stops&&plan.stops[0]&&plan.stops[0].cuisines&&plan.stops[0].cuisines.length));
-  if(result.type==='rows' && result.origin && bankFarFrom(result) && !constrained)
-    fetchNearby(result);
+  const askedCui=(plan.stops&&plan.stops[0]&&plan.stops[0].cuisines||[])[0]||null;
+  const constrained=!!(plan._clarify || askedCui);
+  if(result.type==='rows' && result.origin && bankFarFrom(result)){
+    if(!constrained) fetchNearby(result);
+    /* "nigerian food near me": don't imagine — ask Google's own map, outward
+       from where they stand, and rank what comes back by real distance */
+    else if(askedCui) fetchCuisineNearby(result, askedCui);
+  }
   drawRoute(result.type==='anchor'?result:null);
   const pts=(result.type==='anchor'
       ? (result.anchor?[[result.anchor.d.lat,result.anchor.d.lng]]:[])
@@ -3954,6 +3958,35 @@ async function ambientNearby(){
       toast('Your bank is thin around here — the dashed pins are what Google knows nearby');
     }
   }catch(e){ ambientDone=false; }              // offline now ≠ never
+}
+/* The cuisine ask, answered from the ground up: Google's repository searched
+   around the origin (its bias circle does the radius sense), type-filtered by
+   find.js so only real venues answer, then ranked by actual distance — the
+   closest Nigerian spot in Harrow beats a famous one across town. */
+async function fetchCuisineNearby(result, cuisineWord){
+  const plan=result.plan;
+  result.nearby={loading:true, places:[]};
+  if(S.plan===result) renderPlan();
+  try{
+    const r=await fetch('/api/find',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({q:cuisineWord+' restaurant', keyword:true,
+        lat:result.origin.pt[0], lng:result.origin.pt[1]})});
+    const j=await r.json();
+    const places=(j.places||[]).filter(p=>p.lat!=null)
+      .sort((a,b)=>dist(result.origin.pt,[a.lat,a.lng])-dist(result.origin.pt,[b.lat,b.lng]))
+      .slice(0,6);
+    result.nearby={loading:false, places};
+    if(places.length){
+      const p0=places[0];
+      const where=(result.origin.label && !/^(you|your location|me)$/i.test(result.origin.label))
+        ? result.origin.label : 'you';
+      plan.reply='Nothing vouched for '+cuisineWord+' near '+where+
+        ' — but Google’s own map has some: closest is '+p0.name+', '+
+        fmtDist(dist(result.origin.pt,[p0.lat,p0.lng]))+' away.';
+      plan._nearbySaid=true;
+    }
+  }catch(e){ result.nearby={loading:false, places:[], failed:true}; }
+  if(S.plan===result){ drawNearbyMarkers(result.nearby.places); renderPlan(); }
 }
 async function fetchNearby(result){
   const plan=result.plan;
