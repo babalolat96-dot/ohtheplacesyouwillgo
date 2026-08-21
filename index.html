@@ -6192,7 +6192,15 @@ function thumbHtml(name, area){
   if(!name) return '';
   return '<img class="cthumb" loading="lazy" alt="" src="/api/thumb?n='+
     encodeURIComponent(name)+(area?'&a='+encodeURIComponent(area):'')+
-    '" onerror="this.remove()">';
+    '" onerror="thumbRetry(this)">';
+}
+/* a photo's FIRST fetch can be slow (the server is out banking it) — one
+   patient retry before deciding the place has no face */
+function thumbRetry(img){
+  if(img.dataset.r){ img.remove(); return; }
+  img.dataset.r='1';
+  const s=img.src;
+  setTimeout(()=>{ if(img.isConnected) img.src=s+(s.includes('?')?'&':'?')+'r=1'; }, 3000);
 }
 function card(d){
   const el=document.createElement('div');
@@ -7727,7 +7735,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='4:50 pm, 21 Aug';
+  const BUILT='5:01 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);

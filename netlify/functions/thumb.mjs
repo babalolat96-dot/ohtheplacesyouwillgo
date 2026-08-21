@@ -23,8 +23,12 @@ const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(
 const WIDTH = 480;                       // card thumbs and detail strips both read fine at this
 const MISS_DAYS = 30;                    // a photo-less place gets re-checked monthly
 
+/* two kinds of no: Google SAID there is no photo (cache that), and we just
+   couldn't reach Google right now (never cache that — the next try may win) */
 const nope = (why) => new Response(why, { status: 404,
   headers: { 'Cache-Control': 'public, max-age=86400' } });
+const later = (why) => new Response(why, { status: 404,
+  headers: { 'Cache-Control': 'no-store' } });
 
 async function fetchJson(url, opts, ms) {
   const ac = new AbortController();
@@ -72,6 +76,10 @@ export default async (req) => {
     const enr = await store.get('enrich-v1', { type: 'json' });
     if (enr && enr[sl] && enr[sl].gid) gid = enr[sl].gid;
   } catch (e) {}
+  const remember = async () => {
+    try { await store.setJSON('thumbmiss:' + sl, { at: Date.now() }); } catch (e) {}
+    return nope('no photo');
+  };
   if (!gid) {
     const s = await fetchJson('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
@@ -80,24 +88,21 @@ export default async (req) => {
       body: JSON.stringify({ textQuery: [name, area, 'London'].filter(Boolean).join(', '),
         maxResultCount: 1, languageCode: 'en-GB', regionCode: 'GB' }),
     }, 3000);
-    gid = s && s.places && s.places[0] && s.places[0].id || null;
+    if (s === null) return later('lookup unreachable');
+    gid = s.places && s.places[0] && s.places[0].id || null;
+    if (!gid) return remember();
   }
-
-  const remember = async () => {
-    try { await store.setJSON('thumbmiss:' + sl, { at: Date.now() }); } catch (e) {}
-    return nope('no photo');
-  };
-  if (!gid) return remember();
 
   const d = await fetchJson(`https://places.googleapis.com/v1/places/${gid}`, {
     headers: { 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'photos' },
   }, 3500);
-  const ref = d && d.photos && d.photos[0] && d.photos[0].name || null;
+  if (d === null) return later('details unreachable');
+  const ref = d.photos && d.photos[0] && d.photos[0].name || null;
   if (!ref) return remember();
 
   const media = await fetchJson('https://places.googleapis.com/v1/' + ref +
     '/media?maxWidthPx=' + WIDTH + '&skipHttpRedirect=true&key=' + encodeURIComponent(key), {}, 3500);
-  if (!media || !media.photoUri) return remember();
+  if (media === null || !media.photoUri) return later('media unreachable');
 
   try {
     const ir = await fetch(media.photoUri, { signal: AbortSignal.timeout(5000) });
@@ -108,5 +113,5 @@ export default async (req) => {
     try { await store.set('thumb:' + sl, buf, { metadata: { ct } }); } catch (e) {}
     return new Response(buf, { status: 200, headers: {
       'Content-Type': ct, 'Cache-Control': 'public, max-age=604800, immutable' } });
-  } catch (e) { return nope('fetch failed'); }
+  } catch (e) { return later('fetch failed'); }
 };
