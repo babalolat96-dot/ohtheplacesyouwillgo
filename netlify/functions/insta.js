@@ -214,6 +214,17 @@ async function geoCheck(name, street, area) {
    fail honestly. Screenshots remain the sure route. */
 async function fetchCaption(link) {
   try {
+    /* TikTok is friendlier than Instagram: its public oembed endpoint hands
+       over the caption (where the venue names live) without any wall */
+    if (/tiktok\.com/i.test(link)) {
+      const r = await fetch('https://www.tiktok.com/oembed?url=' + encodeURIComponent(link),
+        { headers: { 'User-Agent': 'Mozilla/5.0' } });
+      if (!r.ok) return null;
+      const j = await r.json();
+      const text = [j.title, j.author_name ? 'by @' + j.author_name : null]
+        .filter(Boolean).join('\n').slice(0, 2500);
+      return text.length > 10 ? { text, account: j.author_name || null } : null;
+    }
     const r = await fetch(link, {
       redirect: 'follow',
       headers: {
@@ -297,8 +308,8 @@ exports.handler = async (event) => {
   const images = (Array.isArray(body.images) ? body.images : [])
     .filter(x => typeof x === 'string' && x.length > 100 && x.length < 2600000)
     .slice(0, 8);
-  const link = /^https:\/\/(www\.)?instagram\.com\//.test(String(body.link || ''))
-    ? String(body.link).slice(0, 200) : null;
+  const link = /^https:\/\/((www|vm|vt)\.)?(instagram\.com|tiktok\.com)\//.test(String(body.link || ''))
+    ? String(body.link).slice(0, 250) : null;
   if (!images.length && !link)
     return { statusCode: 400, headers, body: JSON.stringify({ error: 'no_images' }) };
 
@@ -319,9 +330,10 @@ exports.handler = async (event) => {
       type: 'image',
       source: { type: 'base64', media_type: 'image/jpeg', data: b64.replace(/^data:image\/\w+;base64,/, '') },
     }));
+    const platform = /tiktok/i.test(link || '') ? 'TikTok video' : 'Instagram post';
     content.push({ type: 'text', text: images.length
-      ? 'These are screenshots of one Instagram post. Read them.'
-      : 'This is the link-preview text of one Instagram post — the caption may be '+
+      ? 'These are screenshots of one ' + platform + '. Read them.'
+      : 'This is the caption text of one ' + platform + ' — it may be '+
         'truncated, so extract only complete venue names:\n\n' + fetched.text });
     const r = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',

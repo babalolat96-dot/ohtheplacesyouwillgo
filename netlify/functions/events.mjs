@@ -220,6 +220,44 @@ export default async (req) => {
       return J({ ok: true, added, total: Object.keys(known).length });
     }
 
+    /* "when is Supa D playing?" — Skiddle's events API, by artist keyword,
+       London-centred. Needs the free SKIDDLE_API_KEY; says so plainly if
+       it's missing rather than pretending to search. */
+    if (action === 'djgigs') {
+      const name = String(body.name || '').trim().slice(0, 60);
+      if (!name) return J({ error: 'bad_name' });
+      const k = (process.env.SKIDDLE_API_KEY || '').trim();
+      if (!k) return J({ error: 'no_skiddle_key' });
+      try {
+        const qs = new URLSearchParams({ api_key: k, keyword: name,
+          latitude: '51.5074', longitude: '-0.1278', radius: '30',
+          order: 'date', description: '1' });
+        const r = await fetch('https://www.skiddle.com/api/v1/events/search/?' + qs,
+          { signal: AbortSignal.timeout(8000) });
+        const d = await r.json();
+        if (d.error) return J({ error: 'skiddle_' + (d.errorcode || 'err'),
+          detail: String(d.errormessage || '').slice(0, 120) });
+        const gigs = (d.results || []).map(ev => {
+          const date = ev.date || null;
+          const open = (ev.openingtimes && ev.openingtimes.doorsopen) || null;
+          const close = (ev.openingtimes && ev.openingtimes.doorsclose) || null;
+          let start = date ? date + 'T' + (open || '20:00') + ':00' : null;
+          let end = null;
+          if (date && close) {
+            const st = new Date(start), en = new Date(date + 'T' + close + ':00');
+            if (!isNaN(en.getTime())) { if (en <= st) en.setDate(en.getDate() + 1); end = en.toISOString(); }
+          }
+          return { id: 'sk' + ev.id, title: ev.eventname,
+            venue: (ev.venue && ev.venue.name) || null,
+            area: (ev.venue && ev.venue.town) || null,
+            lat: ev.venue ? Number(ev.venue.latitude) : null,
+            lng: ev.venue ? Number(ev.venue.longitude) : null,
+            start, end, url: ev.link || null };
+        }).filter(g => g.title && g.start && Date.parse(g.start) > Date.now() - 6 * 3600e3);
+        return J({ ok: true, name, gigs: gigs.slice(0, 10) });
+      } catch (e) { return J({ error: 'skiddle_unreachable' }); }
+    }
+
     /* follow a DJ: their pages live at guessable addresses. Probe them, hand
        back what was actually found (title + whether it mentions the name),
        and let the HUMAN pick the right one — verification stays with Tope,

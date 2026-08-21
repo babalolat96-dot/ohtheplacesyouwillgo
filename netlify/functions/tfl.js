@@ -22,6 +22,28 @@ exports.handler = async (event) => {
 
   let body = {};
   try { body = JSON.parse(event.body || '{}'); } catch (e) {}
+
+  /* line status: "is the victoria line down?" — TfL's own live board, free.
+     Returns every line's state; the page picks what was asked about. */
+  if (body.status) {
+    try {
+      const r = await fetch('https://api.tfl.gov.uk/Line/Mode/tube,overground,dlr,elizabeth-line,tram/Status',
+        { headers: { accept: 'application/json' } });
+      if (!r.ok) return { statusCode: 200, headers, body: JSON.stringify({ error: 'tfl_' + r.status }) };
+      const d = await r.json();
+      const lines = (d || []).map(l => {
+        const st = (l.lineStatuses || [])[0] || {};
+        return { name: l.name,
+          status: st.statusSeverityDescription || 'Unknown',
+          good: st.statusSeverity === 10,
+          why: st.reason ? String(st.reason).slice(0, 220) : null };
+      });
+      return { statusCode: 200, headers, body: JSON.stringify({ lines, at: Date.now() }) };
+    } catch (e) {
+      return { statusCode: 200, headers, body: JSON.stringify({ error: 'exception', detail: String(e).slice(0, 120) }) };
+    }
+  }
+
   const a = body.a || {}, b = body.b || {};
   const alat = Number(a.lat), alng = Number(a.lng), blat = Number(b.lat), blng = Number(b.lng);
   if (![alat, alng, blat, blng].every(isFinite) || !inLondon(alat, alng) || !inLondon(blat, blng))

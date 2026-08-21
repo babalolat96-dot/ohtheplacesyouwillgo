@@ -57,13 +57,14 @@ const slug = s => String(s||'').toLowerCase().replace(/[^a-z0-9]/g,'').slice(0,8
 const J = (o, s = 200) => new Response(JSON.stringify(o), { status: s,
   headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
 
-async function grab(url, ms, json) {
+async function grab(url, ms, json, extraHeaders) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), ms);
   try {
     const r = await fetch(url, { signal: ac.signal, redirect: 'follow',
       headers: { 'User-Agent': 'Mozilla/5.0 (compatible; otp-reader/1.0)',
-                 'Accept': json ? 'application/json' : 'text/html,application/xhtml+xml' } });
+                 'Accept': json ? 'application/json' : 'text/html,application/xhtml+xml',
+                 ...(extraHeaders || {}) } });
     if (!r.ok) return null;
     return json ? await r.json() : await r.text();
   } catch (e) { return null; }
@@ -114,8 +115,10 @@ async function press(name, area) {
   const cseCx = envKey(['GOOGLE_CSE_CX','CSE_CX']);
   let hits = [];
   if (brave) {
+    /* Brave authenticates via this header, not the URL — without it every
+       call is a silent 401 and press coverage looks permanently empty. */
     const d = await grab('https://api.search.brave.com/res/v1/web/search?count=6&q=' +
-      encodeURIComponent(q), 2500, true);
+      encodeURIComponent(q), 2500, true, { 'X-Subscription-Token': brave });
     hits = (((d||{}).web||{}).results||[]).map(r => ({ title: r.title, url: r.url,
       snippet: r.description || '' }));
   } else if (cseKey && cseCx) {

@@ -76,7 +76,7 @@ const SCHEMA = {
             venue: { type: 'string' },
             day: { type: 'string', description: 'as written, e.g. "FRI 21 AUG"' },
             time: { type: 'string', description: '24h as written, e.g. "23:00"' },
-            url: { type: 'string', description: 'the [href:...] next to the event, absolute' },
+            url: { type: 'string', description: 'the [href:...] printed immediately beside THIS event — its OWN page (usually /event/...), never the listing page itself. Omit if no per-event link is printed.' },
             genres: { type: 'array', items: { type: 'string' } },
             why: { type: 'string', description: 'one honest line on the taste fit' },
             src: { type: 'string', description: 'the SOURCE label the event appeared under' },
@@ -108,7 +108,9 @@ async function extract(text, today) {
     body: JSON.stringify({
       model, max_tokens: 2500,
       system: 'You extract London event listings from page text, verbatim — never invent an event, ' +
-        'a date, or a URL. Keep ONLY events whose genres or lineup fit this taste: afro house, gqom, ' +
+        'a date, or a URL. Each event\'s url must be the [href:...] beside THAT event (its own page), ' +
+        'never the listing page\'s address; leave url out when no per-event link is printed. ' +
+        'Keep ONLY events whose genres or lineup fit this taste: afro house, gqom, ' +
         '3-step, afrotech, amapiano, afrobeats, dancehall, Soulection-style soul/R&B selections, and ' +
         'Black-London-culture festivals or day parties. Generic techno, trance, hard house or indie do ' +
         'NOT fit unless the lineup clearly overlaps. Fewer certain events beats a padded list.',
@@ -190,12 +192,14 @@ export default async () => {
   // list (SRCKEY) grows from what Tope feeds the app — every event post he
   // pastes teaches a promoter, and the scout reads them all from then on.
   const store = getStore({ name: 'otp-bank', consistency: 'strong' });
-  let learned = [];
+  let learned = [], followedDJs = [];
   try {
     const v = await store.get('evsources-v1', { type: 'json' });
-    learned = (Array.isArray(v) ? v : [])
-      .filter(s => s && /^https:\/\//.test(String(s.url || '')))
+    const all = Array.isArray(v) ? v : [];
+    learned = all.filter(s => s && /^https:\/\//.test(String(s.url || '')))
       .slice(0, 4);                                   // budget: a 10s function
+    followedDJs = all.filter(s => s && s.kind === 'dj' && s.dj)
+      .map(s => String(s.dj).slice(0, 60)).slice(0, 3);
   } catch (e) {}
   const fetches = [
     fetchText('https://orixa.fm/city/london', 4000).then(h => ({ label: 'orixa', h })),
@@ -221,6 +225,35 @@ export default async () => {
     .filter(e => e.start && Date.parse(e.start) > now.getTime() - 6 * 3600e3
                         && Date.parse(e.start) < horizon)
     .slice(0, 25);
+
+  // 2b. followed DJs: their listed gigs join the horizon straight from
+  // Skiddle's live board — no model, no guessing, just their name searched
+  const skey = (process.env.SKIDDLE_API_KEY || '').trim();
+  if (skey && followedDJs.length && left() > 2500) {
+    await Promise.all(followedDJs.map(async dj => {
+      try {
+        const qs = new URLSearchParams({ api_key: skey, keyword: dj,
+          latitude: '51.5074', longitude: '-0.1278', radius: '30', order: 'date' });
+        const r = await fetchJson('https://www.skiddle.com/api/v1/events/search/?' + qs, {}, 4000);
+        (r && r.results || []).slice(0, 5).forEach(ev => {
+          const date = ev.date, open = (ev.openingtimes && ev.openingtimes.doorsopen) || '20:00';
+          if (!date) return;
+          const startISO = date + 'T' + open + ':00';
+          if (Date.parse(startISO) < now.getTime() - 6 * 3600e3
+            || Date.parse(startISO) > horizon) return;
+          events.push({ title: ev.eventname, artists: [dj],
+            venue: (ev.venue && ev.venue.name) || null,
+            area: (ev.venue && ev.venue.town) || null,
+            lat: ev.venue ? Number(ev.venue.latitude) : null,
+            lng: ev.venue ? Number(ev.venue.longitude) : null,
+            start: startISO, url: ev.link || null,
+            src: 'dj: ' + dj.toLowerCase(), genres: [],
+            why: 'You follow ' + dj + ' — Skiddle lists this.' });
+        });
+      } catch (e) {}
+    }));
+    events = events.slice(0, 30);
+  }
 
   // 3. geocode what time allows, in parallel
   const gkey = googleKey();
@@ -249,7 +282,46 @@ export default async () => {
   }));
   if (!cleaned.length) return J({ ok: false, error: 'nothing_in_the_lane', extracted: ex.events.length, kept: 0 });
 
+  // 5. visit each event's OWN page while time allows: the end time and the
+  // flyer live there, not on the listing. Code-only reads — no model cost.
+  let flyersGot = 0, endsGot = 0;
+  if (left() > 3000) {
+    let flyers = {};
+    try { const v = await store.get('evflyers-v1', { type: 'json' });
+      if (v && typeof v === 'object') flyers = v; } catch (e) {}
+    const own = cleaned.filter(e => e.url && /\/event\//.test(e.url)).slice(0, 14);
+    await Promise.all(own.map(async e => {
+      if (left() < 2000) return;
+      const h = await fetchText(e.url, 2500);
+      if (!h) return;
+      const og = (h.match(/property=["']og:image(?::secure_url)?["'][^>]*content=["']([^"']+)/i)
+        || h.match(/content=["']([^"']+)["'][^>]*property=["']og:image/i) || [])[1] || null;
+      if (og && /^https:\/\//.test(og)) {
+        flyers[e.id] = { image: og.slice(0, 500),
+          desc: ((h.match(/property=["']og:description["'][^>]*content=["']([^"']{1,400})/i) || [])[1] || null),
+          at: Date.now() };
+        flyersGot++;
+      }
+      /* "23:00 - 03:00" on the event page is the end time nobody publishes
+         on the listing. Past-midnight ends roll to the next day. */
+      /* colon-only: "23:00 - 03:00". A dot separator would happily match SVG
+         path decimals ("7.76-2.42") and invent an end time from geometry. */
+      const tm = h.replace(/<[^>]+>/g, ' ')
+        .match(/\b(\d{1,2}):(\d{2})\s*[–—-]\s*(\d{1,2}):(\d{2})\b/);
+      if (tm && e.start) {
+        const st = new Date(e.start);
+        const end = new Date(st);
+        end.setHours(+tm[3], +tm[4], 0, 0);
+        if (end <= st) end.setDate(end.getDate() + 1);
+        if (end - st < 16 * 3600e3) { e.end = end.toISOString(); endsGot++; }
+      }
+    }));
+    try { await store.setJSON('evflyers-v1', flyers); } catch (e) {}
+  }
+
   await store.setJSON(KEY, cleaned);
   return J({ ok: true, extracted: ex.events.length, kept: cleaned.length,
-    geocoded: cleaned.filter(e => e.lat).length, model: ex.model, ms: Date.now() - started });
+    geocoded: cleaned.filter(e => e.lat).length,
+    ownPages: cleaned.filter(e => e.url && /\/event\//.test(e.url)).length,
+    flyers: flyersGot, ends: endsGot, model: ex.model, ms: Date.now() - started });
 };
