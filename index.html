@@ -1592,6 +1592,7 @@ html[data-theme="dark"] .mk{border-color:rgba(255,255,255,.55)}
             and shows what it actually found. You confirm it&rsquo;s the right one; the scout then reads
             their page weekly. (RA blocks robots, so RA links won&rsquo;t work here.)</p>
         </div>
+        <button class="mbrowse" id="mydjs" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c.6-3.4 2.8-5.2 5.5-5.2s4.9 1.8 5.5 5.2"/><path d="M16 4.5l.9 2 2 .9-2 .9-.9 2-.9-2-2-.9 2-.9z"/></svg>DJs you follow</button>
         <button class="mbrowse" id="addphoto" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="14" rx="2"/><circle cx="9" cy="10" r="1.5"/><path d="M4 16.5l4.5-4.5 3.5 3.5 3-3 5 5"/></svg>Attach a photo</button>
         <button class="mbrowse" id="sethome" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11l8-7 8 7M6.5 9.5V20h11V9.5"/></svg>Set here as Home</button>
         <input type="file" id="photoin" accept="image/*" hidden>
@@ -5091,6 +5092,14 @@ function clearChat(){ chatlog.innerHTML=''; latestEl.innerHTML=''; S.conv=[]; }
    conversation wakes the sheet first */
 function showChat(){
   document.body.classList.remove('home');
+  /* the library rendered at page load must not sit UNDER the conversation —
+     otherwise the scroll-to-answer lands on the library footer and the
+     answer looks like it never came. No plan open = latest belongs to chat. */
+  if(!S.plan && latestEl.childNodes.length){
+    latestEl.innerHTML=''; countEl.textContent='—';
+    S.browse=false;
+    if(typeof updateFilterCount==='function') updateFilterCount();
+  }
   if(window.innerWidth<=860 && typeof applySnap==='function' && typeof snapIdx!=='undefined' && snapIdx===0)
     applySnap(1);
 }
@@ -7482,6 +7491,21 @@ layout();
     hits.insertAdjacentHTML('beforeend',
       '<p class="msub">Tap the one that is actually them. Pages that don’t mention the name are almost certainly someone else.</p>');
   };
+  /* the DJs you follow, as a conversation: tap a name and the app asks the
+     live listings about them — same lane as typing "when is X playing" */
+  const mydjs=document.getElementById('mydjs');
+  if(mydjs) mydjs.onclick=async()=>{
+    aw.hidden=true;
+    pushBotSay('Checking who you follow…');
+    let j=null; try{ j=await evPost({action:'list'}); }catch(e){}
+    const fl=(j && Array.isArray(j.follows))?j.follows:[];
+    if(!fl.length){
+      pushBotSay('You aren’t following any DJs yet. Open + → “Follow a DJ”, give me a name, and from then on the Thursday scout reads their page weekly — and they’ll show up here.');
+      return;
+    }
+    pushBotChoice('You follow '+fl.length+' DJ'+(fl.length===1?'':'s')+'. Tap one and I’ll check the live listings for their next gigs.',
+      fl.slice(0,8).map(f=>({label:f.name, fn:()=>ask('when is '+f.name+' playing')})));
+  };
   document.getElementById('newchat').onclick=()=>{ aw.hidden=true; freshChat(); q.focus(); };
   /* attach a photo: the AI reads it — a flyer, a storefront, a screenshot —
      and either acts on what it sees or asks the one question it needs */
@@ -7527,7 +7551,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='2:20 pm, 21 Aug';
+  const BUILT='2:32 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);

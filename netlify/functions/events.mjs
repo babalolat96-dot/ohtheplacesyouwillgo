@@ -92,7 +92,13 @@ export default async (req) => {
       let marks = {};
       try { const v = await store.get('evmarks-v1', { type: 'json' });
         if (v && typeof v === 'object') marks = v; } catch (e) {}
-      return J({ events, count: events.length, srcs, refreshedAt: newest || null, venues, marks });
+      /* the DJs the human follows: names only, so the app can show "your DJs"
+         as a tab and ask the listings about each one by name */
+      let follows = [];
+      try { const v = await store.get('evsources-v1', { type: 'json' });
+        if (Array.isArray(v)) follows = v.filter(s => s && s.kind === 'dj' && s.dj)
+          .map(s => ({ name: s.dj, url: s.url })); } catch (e) {}
+      return J({ events, count: events.length, srcs, refreshedAt: newest || null, venues, marks, follows });
     }
 
     /* the flyer: an event's own page carries a share-image and a blurb in its
