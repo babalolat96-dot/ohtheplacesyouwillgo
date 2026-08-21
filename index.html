@@ -5488,6 +5488,15 @@ function render(){
   document.body.classList.toggle('home', window.innerWidth<=860 && !S.plan && !S.browse
     && !ACTIVEPLAN && !chatlog.childNodes.length);
   if(S.plan){ renderPlan(); return; }
+  /* a LIVE conversation owns the screen: background refreshes (saves and
+     Angus's list finishing their merge after the first ask) must never
+     bulldoze it with the library. Only an explicit browse stands it down. */
+  if(chatlog.childNodes.length && !S.browse){
+    latestEl.innerHTML='';
+    countEl.textContent='—';
+    updateFilterCount(); drawPrompts();
+    return;
+  }
   /* browsing the library is not a conversation: the transcript stands down */
   if(chatlog.childNodes.length) clearChat();
   let rows=DATA.filter(match);
@@ -7518,7 +7527,7 @@ drawPrompts();
 homeView();
 /* say which deploy this is — once, when a refresh brings a new build */
 (function(){
-  const BUILT='2:11 pm, 21 Aug';
+  const BUILT='2:20 pm, 21 Aug';
   try{
     const seen=localStorage.getItem('otp:v1:build');
     if(seen && seen!==BUILT) toast('Fresh deploy — built '+BUILT, 3500);
